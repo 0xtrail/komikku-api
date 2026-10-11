@@ -43,7 +43,12 @@ func(m *MangaHandler) Mount(router *echo.Echo) {
 
 func(m *MangaHandler) GetAllComic(c echo.Context) error {
 	filter := c.QueryParam("filter")
-	result := m.mangaCommandUsecase.GetAllComic(filter)
+	// optional, defaults to the first page; anything invalid falls back to 1
+	page := 1
+	if p, err := strconv.Atoi(c.QueryParam("page")); err == nil && p > 1 {
+		page = p
+	}
+	result := m.mangaCommandUsecase.GetAllComic(filter, page)
 	if result.Error != nil {
 		return utils.ResponseError(result.Error, c)
 	}

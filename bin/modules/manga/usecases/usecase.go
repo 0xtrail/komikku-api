@@ -3,7 +3,7 @@ package usecases
 import "komikku-api/bin/pkg/utils"
 
 type MangaUsecase interface {
-	GetAllComic(filter string) utils.Result
+	GetAllComic(filter string, page int) utils.Result
 	GetComicInfo(endpoint string) utils.Result
 	SearchManga(query string) utils.Result
 	GetAllGenre() utils.Result

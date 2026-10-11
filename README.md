@@ -23,6 +23,15 @@ Restful API Manga bahasa Indonesia built with ❤️ and Go
    ```
    make start
    ```
+# Configuration
+Environment variables (or a `.env` file in the repository root):
+
+| Variable   | Required | Description |
+| ---------- | -------- | ----------- |
+| `PORT`     | yes      | HTTP port the API listens on |
+| `BASE_URL` | yes      | Upstream site, `https://komiku.org/` |
+| `API_URL`  | no       | Upstream listing host, defaults to `https://api.komiku.org/` |
+
 # Using Docker Compose
 #### Build image and run container
    ```
@@ -50,7 +59,11 @@ POSTMAN COLLECTION = https://www.getpostman.com/collections/4c984c36d27bb591c445
    https://komiku-api.fly.dev/api/comic/list?filter=manga
    https://komiku-api.fly.dev/api/comic/list?filter=manhwa
    https://komiku-api.fly.dev/api/comic/list?filter=manhua
+   https://komiku-api.fly.dev/api/comic/list?page=2
+   https://komiku-api.fly.dev/api/comic/list?filter=manhwa&page=2
    ```
+
+`page` is optional (default 1). The upstream list is paginated with 50 comics per page.
 
 #### Get Popular Comic
    ```
