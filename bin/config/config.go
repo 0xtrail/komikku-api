@@ -12,6 +12,7 @@ type Env struct {
 	RootApp            string
 	HTTPPort           uint16
 	BaseURL			   string
+	APIURL             string
 }
 
 var GlobalEnv Env
@@ -44,4 +45,19 @@ func init() {
 	if !ok {
 		panic("missing BASE_URL environment")
 	}
+	GlobalEnv.BaseURL = withTrailingSlash(GlobalEnv.BaseURL)
+
+	// API_URL is optional: the host that serves the htmx listing partials.
+	apiURL := strings.TrimSpace(os.Getenv("API_URL"))
+	if apiURL == "" {
+		apiURL = defaultAPIURL
+	}
+	GlobalEnv.APIURL = withTrailingSlash(apiURL)
+}
+
+const defaultAPIURL = "https://api.komiku.org/"
+
+// withTrailingSlash makes sure the URL ends with exactly one "/".
+func withTrailingSlash(u string) string {
+	return strings.TrimRight(strings.TrimSpace(u), "/") + "/"
 }

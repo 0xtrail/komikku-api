@@ -5,6 +5,7 @@ import (
 	"komikku-api/bin/config"
 	"komikku-api/bin/modules/chapter/models/domain"
 	"komikku-api/bin/pkg/utils"
+	"strings"
 )
 
 type ChapterQueryImpl struct {
@@ -20,27 +21,38 @@ func NewChapterQuery(url string, collector *colly.Collector) ChapterQuery {
 	}
 }
 
+// joinURL joins a base URL and a path without producing a double slash.
+func joinURL(base, path string) string {
+	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(path, "/")
+}
+
 func (c ChapterQueryImpl) GetListChapter(endpoint string) utils.Result {
 	var output utils.Result
 	var chapterList []domain.Chapter
-	c.URL = config.GlobalEnv.BaseURL + endpoint
-	c.Collector.AllowURLRevisit = true
-	c.Collector.OnHTML("tbody._3Rsjq", func(e *colly.HTMLElement) {
+	collector := c.Collector.Clone()
+
+	c.URL = joinURL(config.GlobalEnv.BaseURL, endpoint)
+	collector.AllowURLRevisit = true
+	collector.OnHTML("tbody._3Rsjq", func(e *colly.HTMLElement) {
 		e.ForEach("tr", func(i int, element *colly.HTMLElement) {
 			var chapter domain.Chapter
+			// the header row has th.judulseries only, so it is skipped here
 			if element.ChildText("td.judulseries") != "" {
-				chapter.Endpoint = element.ChildAttr("a", "href")
+				chapter.Endpoint = element.ChildAttr("td.judulseries a", "href")
 				chapter.Name = element.ChildText("td.judulseries")
 				chapterList = append(chapterList, chapter)
 			}
 		})
 	})
-	err := c.Collector.Visit(c.URL)
+	err := collector.Visit(c.URL)
 	if err != nil {
 		output = utils.Result{
 			Error: err,
 		}
+
+		return output
 	}
+
 	output = utils.Result{
 		Data: chapterList,
 	}
@@ -51,19 +63,28 @@ func (c ChapterQueryImpl) GetListChapter(endpoint string) utils.Result {
 func (c ChapterQueryImpl) DetailChapter(endpoint string) utils.Result {
 	var output utils.Result
 	var chapter domain.ChapterDetail
+	collector := c.Collector.Clone()
 
-	c.URL = config.GlobalEnv.BaseURL + endpoint
-	c.Collector.AllowURLRevisit = true
-	c.Collector.OnHTML("section[id=Baca_Komik]", func(e *colly.HTMLElement) {
-		imageList := e.ChildAttrs("img", "src")
+	c.URL = joinURL(config.GlobalEnv.BaseURL, endpoint)
+	collector.AllowURLRevisit = true
+	collector.OnHTML("#Baca_Komik", func(e *colly.HTMLElement) {
+		imageList := e.ChildAttrs("img.klazy", "src")
+		if len(imageList) == 0 {
+			// fall back to every image except the promo banner
+			for _, src := range e.ChildAttrs("img", "src") {
+				if !strings.Contains(src, "komiku-promosi") {
+					imageList = append(imageList, src)
+				}
+			}
+		}
 		chapter.Image = imageList
 	})
-	c.Collector.OnHTML("header[id=Judul]", func(e *colly.HTMLElement) {
-		if e.Index == 0 {
-			chapter.Title = e.ChildText("h1")
+	collector.OnHTML("#Judul h1", func(e *colly.HTMLElement) {
+		if chapter.Title == "" {
+			chapter.Title = strings.Join(strings.Fields(e.Text), " ")
 		}
 	})
-	err := c.Collector.Visit(c.URL)
+	err := collector.Visit(c.URL)
 	if err != nil {
 		output = utils.Result{
 			Error: err,

@@ -45,10 +45,10 @@ func (m mangaCommandUsecase) GetComicInfo(endpoint string) utils.Result {
 	return result
 }
 
-func (m mangaCommandUsecase) GetAllComic(filter string) utils.Result {
+func (m mangaCommandUsecase) GetAllComic(filter string, page int) utils.Result {
 	var result utils.Result
 
-	queryRes := m.mangaQuery.GetAllComic(filter)
+	queryRes := m.mangaQuery.GetAllComic(filter, page)
 	if queryRes.Error != nil {
 		errObj := httpError.NewNotFound()
 		errObj.Message = fmt.Sprintf("%v", queryRes.Error)

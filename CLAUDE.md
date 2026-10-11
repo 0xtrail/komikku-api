@@ -2,23 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## ⚠️ Open work: the base URL no longer resolves
+## Upstream migration (done): komiku.org + api.komiku.org
 
-**The upstream source this API scrapes has moved. `BASE_URL=https://komiku.id/` is a dead path, and
-every endpoint that depends on `config.GlobalEnv.BaseURL` is currently returning empty data.** This
-is the highest-priority fix in the repo — see the URL table below for the verified live endpoints.
-When asked to "fix the codebase", this is what is meant.
+Komiku moved off `komiku.id` / `data.komiku.id`. `data.komiku.id` is completely dead (connection
+failure), and `komiku.id` only 301s to `komiku.org` (paths are preserved, so an old `BASE_URL` still
+works through the redirect, but it must not be relied on). The scraper now targets:
 
-`komiku.id` root still 302s to `https://komiku.org/`, but the paths under it do not carry over
-unchanged, and the listing subdomain `data.komiku.id` is **completely dead** (connection failure, no
-DNS/TLS response). Two candidate hosts were reported — `https://01.komiku.asia/` and
-`https://komiku.org/`. Verified:
+- `https://komiku.org/` (`BASE_URL`) for full pages: all-comics list, genre index, comic info page
+  (which also carries the chapter list), and the chapter reader.
+- `https://api.komiku.org/` (`API_URL`) for the htmx listing partials (`div.bge` cards): search,
+  popular, recommended, newest and by-genre.
 
-- `https://komiku.org/` — live, same content and same HTML class names (`div.bge`, `table.inftable`,
-  `div.ims`, `tbody._3Rsjq`, `div#Baca_Komik`, `div#Judul`). **This is the correct target.**
-- `https://01.komiku.asia/` — live but is a *different frontend*: a Next.js/`_next` app on a
-  domain that is not reachable from the scraper's expected paths (`/daftar-komik/` returns a
-  "Halaman tidak ditemukan" page). Do not point the scraper here.
+`.env` must contain `BASE_URL=https://komiku.org/`; `API_URL` is optional and defaults to
+`https://api.komiku.org/`. Both are normalized to end in exactly one `/`.
+
+`https://01.komiku.asia/` was also considered and rejected: it is a different (Next.js) frontend and
+`/daftar-komik/` returns a "Halaman tidak ditemukan" page there. Do not point the scraper at it.
+
+No hostnames are hardcoded in `*_query_impl.go` any more; every URL is built from
+`config.GlobalEnv.BaseURL` or `config.GlobalEnv.APIURL`.
 
 ## What this is
 
@@ -44,7 +46,8 @@ a local daemon — do not run those on the Mac (see the host rules in `~/.claude
 `RootApp` by stripping the literal suffix `/bin/config` from `os.Getwd()`. Running from anywhere
 else panics or mis-sets `RootApp`.
 
-`config.init()` panics unless `PORT` and `BASE_URL` are set; `.env` supplies both.
+`config.init()` panics unless `PORT` and `BASE_URL` are set; `.env` supplies both. `API_URL` is
+optional (default `https://api.komiku.org/`).
 
 ## Layout: sources live under `bin/`
 
@@ -54,7 +57,7 @@ else panics or mis-sets `RootApp`.
 
 ```
 bin/app/main.go                 echo wiring, one Mount() per module
-bin/config/config.go            godotenv -> GlobalEnv (RootApp, HTTPPort, BaseURL)
+bin/config/config.go            godotenv -> GlobalEnv (RootApp, HTTPPort, BaseURL, APIURL)
 bin/modules/<m>/handlers/       HTTP layer: Mount(*echo.Echo) + one method per route
 bin/modules/<m>/usecases/       usecase.go (interface) + query_usecase.go (impl)
 bin/modules/<m>/repositories/queries/   query.go (interface) + *_impl.go (colly scraping)
@@ -88,57 +91,71 @@ to an `httpError.*` struct so `utils.ResponseError` can map it to an HTTP status
 
 Every successful response has the shape `{success, data, message, code}` (`utils.BaseWrapperModel`).
 
-## Scraper URL construction — the fragile part
+## Scraper URL construction and selectors
 
-`config.GlobalEnv.BaseURL` is the only base URL, but it is applied inconsistently: several methods
-in `manga_query_impl.go` ignore it and hardcode other hosts (`data.komiku.id`, `komiku.id`). When
-upstream changes host or path, the fix is not one variable — audit every literal in
-`*_query_impl.go`. Verified current state of the upstream (Komiku migrated off `data.komiku.id`):
+Every URL is built from `config.GlobalEnv.BaseURL` (site) or `config.GlobalEnv.APIURL` (listing
+partials) through the unexported `joinURL` helper, which never produces a `//` (endpoints may arrive
+as `manga/<slug>/` or `/manga/<slug>/`). Verified live state of the upstream:
 
-| Endpoint | Live URL | Card markup |
+| Endpoint | Live URL | Markup |
 | --- | --- | --- |
-| all / filter | `komiku.org/daftar-komik/` (`?tipe=`, `?halaman=N`) | `article.manga-card`, `h4 > a`, `img[data-src]` |
-| info | `komiku.org/manga/<slug>/` | `table.inftable tr:nth-child(n) > td:nth-child(2)`, `ul.genre li.genre`, `div.ims img` |
-| chapter list | same page, `tbody._3Rsjq td.judulseries a` | (chapter href is now `/<slug>-chapter-N/`, **not** `/ch/...`) |
-| chapter detail | `komiku.org/<slug>-chapter-N/` | `div#Baca_Komik img`, `div#Judul h1` |
-| search | `api.komiku.org/?post_type=manga&s=<q>` (HX partial) | `div.bge` |
-| popular | `api.komiku.org/other/hot/` | `div.bge` |
-| recommended | `api.komiku.org/other/rekomendasi/` | `div.bge` |
-| newest | `api.komiku.org/manga/?orderby=date` | `div.bge` |
-| by genre | `api.komiku.org/genre/<slug>/` (`/page/N/`) | `div.bge` |
+| all / filter | `komiku.org/daftar-komik/` (`?tipe=manga\|manhwa\|manhua`, `?halaman=N`) | `article.manga-card`, `h4`, `a[href]`, `img[data-src]` (src is a lazy placeholder), `p.meta` |
+| info | `komiku.org/manga/<slug>/` | `table.inftable` rows matched by label, `ul.genre li.genre`, `div.ims img[src]` |
+| chapter list | same page, `tbody._3Rsjq` rows with `td.judulseries a` | chapter href is `/<slug>-chapter-N/`, **not** `/ch/...`; the header row only has `th.judulseries` |
+| chapter detail | `komiku.org/<slug>-chapter-N/` | `#Baca_Komik img.klazy[src]`, `#Judul h1` (ids, not `section`/`header`) |
+| genre list | `komiku.org/p/daftar-genre/` | `a.gnr` with `<b>` title and `/genre/<slug>/` href |
+| search | `api.komiku.org/?post_type=manga&s=<q>` | `div.bge` |
+| popular | `api.komiku.org/other/hot/` (`page/N/`) | `div.bge` |
+| recommended | `api.komiku.org/other/rekomendasi/` (`page/N/`) | `div.bge` |
+| newest | `api.komiku.org/manga/` (`page/N/`) | `div.bge` (the old `data.komiku.id/pustaka/` is this page; no `?orderby=`) |
+| by genre | `api.komiku.org/genre/<slug>/` (`page/N/`) | `div.bge` |
+
+All listing partials return 10 cards per page; `/daftar-komik/` returns 50 cards per page (about 158
+pages), so `GET /api/comic/list` accepts an optional `?page=N` (default 1, anything invalid or below 1
+means page 1) together with the existing `?filter=`.
 
 The `div.bge` listings are loaded by htmx from `api.komiku.org`; the outer HTML page on
 `komiku.org` renders an empty `div.daftar`. Scraping `komiku.org/genre/<x>/` directly yields no
-cards — must hit the api host.
+cards, so the api host must be used. The five listing methods share one `scrapeCards` helper. In
+those partials the thumbnail is in `img[src]` (there is no `data-src`); the helper falls back to
+`data-src` only if `src` is empty. The last element of each partial is an htmx `<span hx-get=...>`
+for the next page, which is not a card.
 
 Selector drift is the normal failure mode here, and it is silent: a selector that stops matching
-produces an empty result, not an error. `komiku.id` still 302s to `komiku.org`, and image CDN hosts
-have moved to `thumbnail.komiku.org` / `thumbnail.komiku.to` / `image2.komiku.to`.
+produces an empty result, not an error. Image CDN hosts have also moved around
+(`thumbnail.komiku.org`, `thumbnail.komiku.to`, `image2.komiku.to`).
 
-`GetComicInfo` reads `table.inftable` by hardcoded `tr:nth-child(N)` position, which is already
-broken: the upstream table gained an "Judul Alternatif" row, so row 2 is now the alt title (read
-into `Type`), row 4 is "Tema" (into `Author`), and so on. Match on the row label text, not index,
-when fixing this.
+Normalization rules applied to listing results:
 
-Images are `?resize=...`/`?w=...`-suffixed CDN URLs stripped by hand with `strings.TrimSuffix`.
-Keep that pattern; do not "simplify" it, the suffix is not stable across hosts.
+- `Comic.Endpoint` is always the site-relative path with a leading slash (`/manga/<slug>/`), taken
+  from the href with `net/url` (`endpointPath`), whether upstream hands back an absolute or a relative
+  href. This is the contract documented in the README.
+- Thumbnail URLs go through `stripQuery`, which drops everything from the first `?`. The resize
+  suffix differs per host (`?resize=450,235&quality=60`, `?resize=160,220`, `?w=500`), so a literal
+  `TrimSuffix` is not enough. Chapter page images are deliberately left untouched.
+- Search: the Echo param may arrive raw or still percent-encoded (`one%20punch`); it is
+  `url.PathUnescape`d (raw value on error) and then `url.QueryEscape`d into the URL.
 
-## Known bug: errors are overwritten, not returned
+`GetComicInfo` reads `table.inftable` by iterating `tr` rows and switching on the normalized label of
+the first `td` (trimmed, trailing `:` removed, lowercased): `judul`, `tipe`, `author`/`pengarang`,
+`status`, `rating`. Unknown rows (e.g. "Judul Alternatif", "Tema", "Cara Baca") are ignored. The old
+positional `tr:nth-child(N)` parsing broke when upstream added the alternative-title row; do not go
+back to positions.
 
-In `GetAllComic`, `GetComicInfo` (manga) and `GetListChapter` (chapter) the sequence is:
+`GetAllGenre` takes the genre slug from the `/genre/<slug>/` **href**, not from `data-nama`:
+`data-nama` is a display name for about 20 genres (`dark fantasy`, `shoujo(g)`, `girls&#039; love`) and
+`/genre/dark%20fantasy/` is a 404 upstream, while `/genre/dark-fantasy/` works. `data-nama` is only a
+fallback. Results are deduplicated by slug. That slug is exactly what `GetByGenre` takes as `:endpoint`.
 
-```go
-err := g.Collector.Visit(g.URL)
-if err != nil {
-    output = utils.Result{Error: err}   // assigned...
-}
-output = utils.Result{Data: result}     // ...then immediately clobbered
-return output
-```
+## Errors are returned, not swallowed
 
-A failed scrape returns `success:true` with empty data. The other methods `return output` inside the
-`if err != nil` block and are correct. If touching this file, make the three broken methods match
-the rest.
+A failed scrape must surface as an error. colly's `Visit` returns an error for non-2xx responses, so
+an unknown slug (upstream 404) becomes `Result{Error: err}`, which the usecase wraps in
+`httpError.NotFound` and the handler returns as HTTP 404 with `success:false`. Every query method
+returns inside its `if err != nil` block. (Historically `GetAllComic`, `GetComicInfo` and
+`GetListChapter` assigned the error and then overwrote it with `Data`, returning `success:true` with
+empty data; do not reintroduce that pattern.) An empty-but-successful scrape is still handled by the
+usecases (`Data not found` for the listings), not by the query layer.
 
 ## Wiring is manual, no DI container
 
@@ -146,8 +163,13 @@ the rest.
 `config.GlobalEnv.BaseURL`, and hands them to `CreateNewMangaUsecase`. `main.go` calls `New()` +
 `Mount(e)` per module. Adding a module means touching `main.go` by hand.
 
-One collector is shared between manga and chapter queries within a handler, and `AllowURLRevisit`
-is set per call — fine as long as the collector stays single-goroutine, which it currently is.
+One `*colly.Collector` is shared between the manga and chapter queries within a handler, but it is
+only a template: every scraping method starts with `c := g.Collector.Clone()` (colly v1.2.0 copies the
+configuration but not the callbacks) and registers its `OnHTML` callbacks and `Visit` on the clone,
+setting `AllowURLRevisit = true` there. Do not register callbacks on the shared collector: callbacks
+accumulate forever and, under concurrent HTTP requests, fire during other requests' visits and write
+into their result slices. The clones share only the HTTP backend, cookie jar and lock, which colly
+designs to be shared.
 
 ## Conventions
 
