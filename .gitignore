@@ -1,0 +1,7 @@
+komiku-scrapper.iml
+.idea
+vendor
+fly.toml
+.env
+main
+.DS_Store
