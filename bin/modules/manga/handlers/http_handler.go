@@ -9,22 +9,25 @@ import (
 	mangaQ "komikku-api/bin/modules/manga/repositories/queries"
 	mangaU "komikku-api/bin/modules/manga/usecases"
 	httpError "komikku-api/bin/pkg/http-error"
+	"komikku-api/bin/pkg/imgproxy"
 	"komikku-api/bin/pkg/utils"
 	"net/http"
 	"strconv"
 )
 
 type MangaHandler struct {
-	mangaCommandUsecase	mangaU.MangaUsecase
+	mangaCommandUsecase mangaU.MangaUsecase
+	imgProxy            *imgproxy.Proxy
 }
 
-func New() *MangaHandler {
+func New(imgProxy *imgproxy.Proxy) *MangaHandler {
 	collector := colly.NewCollector()
 	queryManga := mangaQ.NewMangaQuery(config.GlobalEnv.BaseURL, collector)
 	queryChapter := chapterQ.NewChapterQuery(config.GlobalEnv.BaseURL, collector)
 	queryUsecase := mangaU.CreateNewMangaUsecase(queryManga, queryChapter)
 	return &MangaHandler{
 		mangaCommandUsecase: queryUsecase,
+		imgProxy:            imgProxy,
 	}
 }
 
@@ -53,7 +56,7 @@ func(m *MangaHandler) GetAllComic(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Get All Comic", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Get All Comic", http.StatusOK, c)
 }
 
 func(m *MangaHandler) GetComicInfo(c echo.Context) error {
@@ -64,7 +67,7 @@ func(m *MangaHandler) GetComicInfo(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Get Comic Info", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Get Comic Info", http.StatusOK, c)
 }
 
 func(m *MangaHandler) SearchManga(c echo.Context) error {
@@ -75,7 +78,7 @@ func(m *MangaHandler) SearchManga(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Search manga", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Search manga", http.StatusOK, c)
 }
 
 func (m *MangaHandler) GetAllGenre(c echo.Context) error {
@@ -86,7 +89,7 @@ func (m *MangaHandler) GetAllGenre(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Get all genre", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Get all genre", http.StatusOK, c)
 }
 
 func (m *MangaHandler) GetPopularManga(c echo.Context) error {
@@ -104,7 +107,7 @@ func (m *MangaHandler) GetPopularManga(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Search manga", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Search manga", http.StatusOK, c)
 }
 
 func (m *MangaHandler) GetRecommendedManga(c echo.Context) error {
@@ -121,7 +124,7 @@ func (m *MangaHandler) GetRecommendedManga(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Search manga", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Search manga", http.StatusOK, c)
 }
 
 func (m *MangaHandler) GetNewestManga(c echo.Context) error  {
@@ -138,7 +141,7 @@ func (m *MangaHandler) GetNewestManga(c echo.Context) error  {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Search manga", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Search manga", http.StatusOK, c)
 }
 
 func (m *MangaHandler) GetByGenre(c echo.Context) error {
@@ -156,5 +159,5 @@ func (m *MangaHandler) GetByGenre(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Get Comic By Genre", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Get Comic By Genre", http.StatusOK, c)
 }

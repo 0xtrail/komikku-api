@@ -7,6 +7,7 @@ import (
 	"komikku-api/bin/config"
 	chapterH "komikku-api/bin/modules/chapter/handlers"
 	mangaH "komikku-api/bin/modules/manga/handlers"
+	"komikku-api/bin/pkg/imgproxy"
 	"komikku-api/bin/pkg/middlewares"
 	"komikku-api/bin/pkg/utils"
 	"net/http"
@@ -22,10 +23,19 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middlewares.Logger())
 
-	comicHttp := mangaH.New()
+	// One image proxy shared by the handlers that rewrite image URLs and the
+	// /img/:token route that serves them. Disabled unless PROXY_HMAC_KEY is valid.
+	imgProxy := imgproxy.New(imgproxy.Config{
+		HMACKey:      config.GlobalEnv.ProxyHMACKey,
+		AllowedHosts: config.GlobalEnv.ProxyAllowedHosts,
+		PublicURL:    config.GlobalEnv.ProxyPublicURL,
+	})
+	imgProxy.Mount(e)
+
+	comicHttp := mangaH.New(imgProxy)
 	comicHttp.Mount(e)
 
-	chapterHttp := chapterH.New()
+	chapterHttp := chapterH.New(imgProxy)
 	chapterHttp.Mount(e)
 
 	e.GET("/", func(c echo.Context) error {
