@@ -1,22 +1,13 @@
 ---
-// Shell statis untuk /manga/* dan /chapter/* (rewrite 200 dari public/_redirects).
-// Konten diambil client-side karena output `static` tidak bisa prerender route
-// dinamis tanpa getStaticPaths()/adapter.
-import '../styles/global.css';
-import Nav from '../components/Nav.astro';
+// Shell statis untuk /manga/*, /chapter/*, /genre/*, /populer/*, /terbaru/*
+// (rewrite 200 dari nginx.conf / public/_redirects). Isi diambil client-side:
+// output `static` tidak bisa prerender route dinamis tanpa getStaticPaths()/adapter.
+// #app sengaja kosong — boot.ts mengisinya dari cache (sinkron) atau skeleton.
+import Base from '../layouts/Base.astro';
 ---
-<html lang="id">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Manga Reader</title>
-		<link rel="icon" href="/favicon.svg" />
-	</head>
-	<body>
-		<Nav />
-		<main id="app"><p class="muted">Memuat…</p></main>
-		<script>
-			import '../lib/boot';
-		</script>
-	</body>
-</html>
+<Base>
+	<div id="app" aria-busy="true"><span class="sr-only">Sedang memuat konten</span></div>
+</Base>
+<script>
+	import '../lib/boot';
+</script>
