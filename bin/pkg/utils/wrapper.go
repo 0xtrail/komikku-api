@@ -87,6 +87,12 @@ func getErrorStatusCode(err interface{}) httpError.CommonError {
 		errData.Data = obj.Data
 		errData.Message = obj.Message
 		return errData
+	case httpError.BadGateway:
+		errData.ResponseCode = http.StatusBadGateway
+		errData.Code = obj.Code
+		errData.Data = obj.Data
+		errData.Message = obj.Message
+		return errData
 	default:
 		errData.Code = http.StatusConflict
 		return errData

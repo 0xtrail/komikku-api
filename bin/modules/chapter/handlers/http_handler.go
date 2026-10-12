@@ -6,21 +6,24 @@ import (
 	"komikku-api/bin/config"
 	chapterQ "komikku-api/bin/modules/chapter/repositories/queries"
 	chapterU "komikku-api/bin/modules/chapter/usecases"
+	"komikku-api/bin/pkg/imgproxy"
 	"komikku-api/bin/pkg/utils"
 	"net/http"
 )
 
 type ChapterHandler struct {
 	chapterCommandUsecase chapterU.ChapterUsecase
+	imgProxy              *imgproxy.Proxy
 }
 
 
-func New() *ChapterHandler {
+func New(imgProxy *imgproxy.Proxy) *ChapterHandler {
 	collector := colly.NewCollector()
 	queryChapter := chapterQ.NewChapterQuery(config.GlobalEnv.BaseURL, collector)
 	queryUsecase := chapterU.CreateNewChapterUsecase(queryChapter)
 	return &ChapterHandler{
 		chapterCommandUsecase: queryUsecase,
+		imgProxy:              imgProxy,
 	}
 }
 
@@ -37,5 +40,5 @@ func(m *ChapterHandler) GetChapterDetail(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
-	return utils.Response(result.Data, "Get Chapter Detail", http.StatusOK, c)
+	return utils.Response(m.proxyImages(c, result.Data), "Get Chapter Detail", http.StatusOK, c)
 }

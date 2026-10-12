@@ -85,3 +85,18 @@ func NewInternalServerError() InternalServerError {
 
 	return errObj
 }
+
+// BadGateway struct
+type BadGateway struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+func NewBadGateway() BadGateway {
+	errObj := BadGateway{}
+	errObj.Message = "Bad Gateway"
+	errObj.Code = http.StatusBadGateway
+
+	return errObj
+}
