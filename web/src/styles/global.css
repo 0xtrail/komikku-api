@@ -849,11 +849,9 @@ html[data-view="chapter"] .tabbar {
 	background: var(--bg);
 }
 
-.chapter-list {
-	max-height: min(60vh, 440px);
-	overflow-y: auto;
-	overscroll-behavior: contain;
-}
+/* Ponsel: daftar chapter tidak punya scroll sendiri, ikut scroll halaman.
+   Scroll bersarang + overscroll-behavior: contain menahan swipe di dalam list,
+   halaman tidak pernah turun, dan chapter terakhir tertutup tab bar. */
 .chapter-list li + li {
 	border-top: 1px solid var(--border);
 }
@@ -872,6 +870,15 @@ html[data-view="chapter"] .tabbar {
 }
 .chapter-list a:focus-visible {
 	outline-offset: -3px;
+}
+
+/* Desktop: tab bar hilang, jadi list boleh scroll di dalam kartunya. */
+@media (min-width: 860px) {
+	.chapter-list {
+		max-height: min(60vh, 440px);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
 }
 .pad {
 	padding: 14px;
