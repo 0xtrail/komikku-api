@@ -891,8 +891,7 @@ html[data-view="chapter"] main.wrap {
 }
 
 .reader {
-	max-width: 800px;
-	margin-inline: auto;
+	max-width: none;
 	padding-bottom: calc(68px + var(--safe-b));
 }
 .reader-head {
