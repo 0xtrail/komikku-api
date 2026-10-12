@@ -1,0 +1,9 @@
+# URL rapi untuk halaman dinamis: output `static` tidak bisa membuat route
+# dinamis tanpa getStaticPaths()/adapter, jadi shell-nya statis dan isinya
+# diambil client-side (src/lib/boot.ts).
+# Rewrite 200 -> URL tetap, konten = halaman /view/.
+# Tujuan harus file yang benar-benar ada: Astro menaruh shell di
+# dist/view/index.html, BUKAN dist/view.html.
+# Hanya berlaku di Cloudflare Pages.
+/manga/*    /view/index.html  200
+/chapter/*  /view/index.html  200

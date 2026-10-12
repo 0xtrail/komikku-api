@@ -1,0 +1,22 @@
+---
+// Shell statis untuk /manga/* dan /chapter/* (rewrite 200 dari public/_redirects).
+// Konten diambil client-side karena output `static` tidak bisa prerender route
+// dinamis tanpa getStaticPaths()/adapter.
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+---
+<html lang="id">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Manga Reader</title>
+		<link rel="icon" href="/favicon.svg" />
+	</head>
+	<body>
+		<Nav />
+		<main id="app"><p class="muted">Memuat…</p></main>
+		<script>
+			import '../lib/boot';
+		</script>
+	</body>
+</html>
