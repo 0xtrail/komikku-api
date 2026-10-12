@@ -1,0 +1,22 @@
+# Never bake local secrets or build artifacts into the image.
+# The Dockerfile does COPY . . and .env holds BASE_URL/PORT.
+.env
+.env.*
+!.env.example
+
+# build output / local binaries
+main
+komikku-api
+bin/main
+
+# editor + VCS noise
+.git
+.gitignore
+.idea
+*.iml
+.DS_Store
+
+# docs are not needed at runtime
+README.md
+CLAUDE.md
+docker-compose.yaml
