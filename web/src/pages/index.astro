@@ -1,0 +1,31 @@
+---
+// Beranda: satu-satunya halaman yang di-render di server saat build.
+// Aman di-prerender karena tidak butuh parameter apa pun.
+import Base from '../layouts/Base.astro';
+import { getPopular, slugOf } from '../lib/api';
+
+let comics: Awaited<ReturnType<typeof getPopular>> = [];
+let error = '';
+try {
+	comics = await getPopular(1);
+} catch (e) {
+	error = e instanceof Error ? e.message : 'Gagal memuat data';
+}
+---
+<Base title="Manga Reader">
+	<h1>Manga Populer</h1>
+	{error && <p class="err">Gagal memuat data: {error}</p>}
+	{
+		!error && comics.length === 0 && <p class="muted">Tidak ada data.</p>
+	}
+	<div class="grid">
+		{
+			comics.map((c) => (
+				<a class="card" href={`/manga/${slugOf(c.endpoint)}/`}>
+					<img src={c.image} alt={c.title} loading="lazy" />
+					<span class="card-title">{c.title}</span>
+				</a>
+			))
+		}
+	</div>
+</Base>
