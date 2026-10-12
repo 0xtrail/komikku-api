@@ -1,19 +1,52 @@
 ---
-const { title } = Astro.props;
+// Kerangka halaman bersama: head, header, <main>. Halaman mengisi <slot />.
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
+import TabBar from '../components/TabBar.astro';
+import { API_BASE } from '../lib/api';
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const {
+	title = 'Panel — Baca manga, manhwa & manhua',
+	description = 'Baca manga, manhwa, dan manhua terbaru dengan tampilan ringan dan cepat.',
+} = Astro.props;
 ---
 <!doctype html>
 <html lang="id">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)" />
+		<meta name="description" content={description} />
 		<title>{title}</title>
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<!-- Koneksi ke API (fetch CORS) dan gambar (no-cors) memakai pool socket berbeda. -->
+		<link rel="preconnect" href={API_BASE} crossorigin />
+		<link rel="preconnect" href={API_BASE} />
+		<!-- Tema pilihan & jenis halaman diset sebelum cat pertama agar tidak berkedip. -->
+		<script is:inline>
+			(function () {
+				var d = document.documentElement;
+				try {
+					var t = localStorage.getItem('mr:theme');
+					if (t === 'dark' || t === 'light') d.setAttribute('data-theme', t);
+				} catch (e) {}
+				d.setAttribute('data-view', location.pathname.split('/')[1] || 'home');
+			})();
+		</script>
 	</head>
 	<body>
+		<a class="skip" href="#main">Lewati ke konten</a>
 		<Nav />
-		<main>
+		<main id="main" class="wrap">
 			<slot />
 		</main>
+		<TabBar />
 	</body>
 </html>

@@ -1,17 +1,11 @@
 ---
-// Shell pencarian. `search.html` statis di-generate sekali saat build, jadi
-// `?q=` TIDAK bisa dibaca di server — hasil diambil client-side.
+// Shell pencarian. `search/index.html` statis di-generate sekali saat build,
+// jadi `?q=` TIDAK bisa dibaca di server — hasil diambil client-side (boot.ts).
 import Base from '../layouts/Base.astro';
 ---
-<Base title="Cari Manga">
-	<h1>Cari Manga</h1>
-	<form action="/search/" method="get" role="search">
-		<input type="search" id="q" name="q" placeholder="Judul manga…" aria-label="Cari manga" />
-		<button type="submit">Cari</button>
-	</form>
-	<div id="app"><p class="muted">Memuat…</p></div>
+<Base title="Cari manga — Panel">
+	<div id="app" aria-busy="true"><span class="sr-only">Sedang memuat konten</span></div>
 </Base>
 <script>
-	import { mountSearch } from '../lib/client';
-	mountSearch();
+	import '../lib/boot';
 </script>

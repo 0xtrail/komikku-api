@@ -5,5 +5,9 @@
 # Tujuan harus file yang benar-benar ada: Astro menaruh shell di
 # dist/view/index.html, BUKAN dist/view.html.
 # Hanya berlaku di Cloudflare Pages.
+# Prefix harus sama dengan location regex di nginx.conf.
 /manga/*    /view/index.html  200
 /chapter/*  /view/index.html  200
+/genre/*    /view/index.html  200
+/populer/*  /view/index.html  200
+/terbaru/*  /view/index.html  200

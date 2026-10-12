@@ -1,0 +1,22 @@
+---
+// Tab bar bawah untuk ponsel (jangkauan jempol). Disembunyikan di desktop
+// (header memuat menu yang sama) dan di reader (yang punya bar chapter sendiri).
+---
+<nav class="tabbar" aria-label="Navigasi bawah">
+	<a href="/" data-nav="home">
+		<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 11 12 3.8 20.5 11v8.7a1.3 1.3 0 0 1-1.3 1.3H15v-6h-6v6H4.8a1.3 1.3 0 0 1-1.3-1.3Z" fill="currentColor" /></svg>
+		<span>Beranda</span>
+	</a>
+	<a href="/populer/" data-nav="populer">
+		<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13 2.5c.4 3-1.3 4.7-3 6.5-1.6 1.7-3 3.4-3 6a6 6 0 0 0 12 0c0-2-.8-3.6-2-5 0 1.7-.7 2.6-1.6 3 .5-3.7-.6-7-2.4-10.5Z" fill="currentColor" /></svg>
+		<span>Populer</span>
+	</a>
+	<a href="/terbaru/" data-nav="terbaru">
+		<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2" /><path d="M12 7v5.2l3.4 2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+		<span>Terbaru</span>
+	</a>
+	<a href="/#genre" data-nav="genre">
+		<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7.2" height="7.2" rx="2" fill="currentColor" /><rect x="13.3" y="3.5" width="7.2" height="7.2" rx="2" fill="currentColor" /><rect x="3.5" y="13.3" width="7.2" height="7.2" rx="2" fill="currentColor" /><rect x="13.3" y="13.3" width="7.2" height="7.2" rx="2" fill="currentColor" /></svg>
+		<span>Genre</span>
+	</a>
+</nav>

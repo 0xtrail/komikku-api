@@ -1,7 +1,57 @@
-<nav>
-	<a href="/">Beranda</a>
-	<form action="/search/" method="get" role="search">
-		<input type="search" name="q" placeholder="Cari manga…" aria-label="Cari manga" />
-		<button type="submit">Cari</button>
-	</form>
-</nav>
+---
+// Header lengket ringkas: merek, navigasi utama (desktop), kolom cari kompak,
+// tombol tema. Navigasi utama ponsel ada di TabBar.astro.
+// Menu aktif & tombol tema dikelola di src/lib/site.ts.
+---
+<header class="site-header">
+	<div class="wrap bar">
+		<a class="brand" href="/" aria-label="Panel, beranda">
+			<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+				<rect x="2" y="2" width="9" height="20" rx="2.5" fill="currentColor" />
+				<rect x="13" y="2" width="9" height="9" rx="2.5" fill="currentColor" />
+				<rect x="13" y="13" width="9" height="9" rx="2.5" fill="currentColor" opacity=".55" />
+			</svg>
+			<span>Panel</span>
+		</a>
+
+		<nav class="primary-nav" aria-label="Utama">
+			<a href="/" data-nav="home">Beranda</a>
+			<a href="/populer/" data-nav="populer">Populer</a>
+			<a href="/terbaru/" data-nav="terbaru">Terbaru</a>
+			<a href="/#genre" data-nav="genre">Genre</a>
+		</nav>
+
+		<form class="search" action="/search/" method="get" role="search">
+			<input
+				id="q"
+				type="search"
+				name="q"
+				placeholder="Cari judul…"
+				aria-label="Cari manga"
+				autocomplete="off"
+				enterkeyhint="search"
+			/>
+			<button type="submit" aria-label="Cari">
+				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+					<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
+					<path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+				</svg>
+			</button>
+		</form>
+
+		<button class="theme-toggle" type="button" data-theme-toggle aria-label="Mode gelap" aria-pressed="false">
+			<svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+				<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor" />
+			</svg>
+			<svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+				<circle cx="12" cy="12" r="4.2" fill="currentColor" />
+				<path
+					d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+				/>
+			</svg>
+		</button>
+	</div>
+</header>

@@ -1,31 +1,103 @@
 ---
-// Beranda: satu-satunya halaman yang di-render di server saat build.
-// Aman di-prerender karena tidak butuh parameter apa pun.
+// Beranda: di-prerender saat build sebagai paint pertama yang instan.
+// Di browser, src/lib/client.ts (mountHome) mengambil data terbaru di latar
+// belakang dan menukar section hanya bila isinya berubah. Markup dibuat oleh
+// src/lib/views.ts — fungsi yang sama dipakai klien, jadi tidak ada layout jump.
 import Base from '../layouts/Base.astro';
-import { getPopular, slugOf } from '../lib/api';
+import { getPopular, getRecommended, getNewest, getGenres } from '../lib/api';
+import {
+	railHtml,
+	gridHtml,
+	genreCloud,
+	skelRail,
+	skelGrid,
+	skelChips,
+	sig,
+	SR_LOADING,
+} from '../lib/views';
 
-let comics: Awaited<ReturnType<typeof getPopular>> = [];
-let error = '';
-try {
-	comics = await getPopular(1);
-} catch (e) {
-	error = e instanceof Error ? e.message : 'Gagal memuat data';
-}
----
-<Base title="Manga Reader">
-	<h1>Manga Populer</h1>
-	{error && <p class="err">Gagal memuat data: {error}</p>}
+// Satu section yang gagal tidak boleh menggagalkan build atau section lain.
+const [popular, recommended, newest, genres] = await Promise.allSettled([
+	getPopular(1),
+	getRecommended(1),
+	getNewest(1),
+	getGenres(),
+]);
+const ok = <T,>(r: PromiseSettledResult<T>, name: string): T | undefined => {
+	if (r.status === 'fulfilled') return r.value;
+	console.warn(`[index] prerender ${name} gagal: ${r.reason instanceof Error ? r.reason.message : r.reason}`);
+	return undefined;
+};
+
+const popularData = ok(popular, 'popular');
+const recommendedData = ok(recommended, 'recommended');
+const newestData = ok(newest, 'newest');
+const genreData = ok(genres, 'genre');
+
+// Data kosong dianggap gagal: klien akan mengisinya (tampilkan skeleton, bukan "kosong").
+const has = (d?: unknown[]) => (d && d.length ? d : undefined);
+const sections = [
 	{
-		!error && comics.length === 0 && <p class="muted">Tidak ada data.</p>
+		key: 'popular',
+		id: 'populer',
+		title: 'Populer',
+		more: '/populer/',
+		data: has(popularData),
+		html: has(popularData) ? railHtml(popularData!) : skelRail(),
+	},
+	{
+		key: 'recommended',
+		id: 'rekomendasi',
+		title: 'Rekomendasi',
+		data: has(recommendedData),
+		html: has(recommendedData) ? gridHtml(recommendedData!) : skelGrid(12),
+	},
+	{
+		key: 'newest',
+		id: 'terbaru',
+		title: 'Terbaru',
+		more: '/terbaru/',
+		data: has(newestData),
+		html: has(newestData) ? gridHtml(newestData!) : skelGrid(12),
+	},
+	{
+		key: 'genre',
+		id: 'genre',
+		title: 'Genre',
+		data: has(genreData),
+		html: has(genreData) ? genreCloud(genreData!) : skelChips(),
+	},
+];
+---
+<Base>
+	<h1 class="sr-only">Baca manga, manhwa, dan manhua online</h1>
+	{
+		sections.map((s) => (
+			<section class="sec" id={s.id} aria-labelledby={`h-${s.id}`} data-sec={s.key}>
+				<header class="sec-head">
+					<h2 id={`h-${s.id}`}>
+						<i class="mark" aria-hidden="true" />
+						{s.title}
+					</h2>
+					{s.key === 'popular' && (
+						<span class="rail-ctl">
+							<button type="button" class="icon-btn" data-rail-btn="prev" aria-label="Geser ke kiri">&lsaquo;</button>
+							<button type="button" class="icon-btn" data-rail-btn="next" aria-label="Geser ke kanan">&rsaquo;</button>
+						</span>
+					)}
+					{s.more && (
+						<a class="more" href={s.more}>
+							Lihat semua<span aria-hidden="true"> &rarr;</span>
+						</a>
+					)}
+				</header>
+				<div class="sec-body" data-body data-sig={s.data ? sig(s.data) : ''} aria-busy={s.data ? 'false' : 'true'}>
+					<Fragment set:html={s.data ? s.html : s.html + SR_LOADING} />
+				</div>
+			</section>
+		))
 	}
-	<div class="grid">
-		{
-			comics.map((c) => (
-				<a class="card" href={`/manga/${slugOf(c.endpoint)}/`}>
-					<img src={c.image} alt={c.title} loading="lazy" />
-					<span class="card-title">{c.title}</span>
-				</a>
-			))
-		}
-	</div>
 </Base>
+<script>
+	import '../lib/boot';
+</script>

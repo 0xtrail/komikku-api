@@ -1,101 +1,493 @@
 /**
- * Router sisi-klien untuk rute yang tidak bisa di-prerender:
- * /manga/<endpoint> dan /chapter/<endpoint>.
+ * Render sisi-klien untuk rute yang tidak bisa di-prerender: /manga/<slug>,
+ * /chapter/<slug>, /genre/<slug>, /populer, /terbaru, /search, serta hidrasi
+ * beranda (yang sudah di-prerender saat build).
  *
  * Kenapa klien, bukan server: output `static` tidak bisa punya route dinamis
  * tanpa getStaticPaths() (data API, bukan daftar tetap) DAN tidak bisa
  * `prerender = false` tanpa adapter. Jadi HTML-nya statis, isinya diambil
- * di browser. URL tetap rapi lewat rewrite 200 di `public/_redirects`.
+ * di browser. URL tetap rapi lewat rewrite 200 (`nginx.conf` / `public/_redirects`).
+ *
+ * Pola render (`loadView`): cache dulu (sinkron, tanpa state loading) -> kalau
+ * kosong tampilkan skeleton -> data datang -> render. Cache yang agak tua
+ * divalidasi ulang di latar belakang dan hanya dirender ulang bila berubah.
  */
-import { getInfo, getChapter, search, slugOf, ApiError, type Manga } from './api';
+import {
+  ApiError,
+  STALE_MS,
+  PAGE_SIZE,
+  chapterSlug,
+  get,
+  paths,
+  peek,
+  peekEntry,
+  type ChapterDetail,
+  type Genre,
+  type Manga,
+  type MangaInfo,
+} from './api';
+import { genreHref, listHref, mangaSlugOfChapter, type Route } from './routes';
+import { observeCards, prefetchPath } from './prefetch';
+import {
+  SR_LOADING,
+  detailHtml,
+  esc,
+  genreCloud,
+  gridHtml,
+  pagerHtml,
+  railHtml,
+  readerHtml,
+  readerHeadHtml,
+  readerNavHtml,
+  readerTitle,
+  sig,
+  skelChips,
+  skelDetail,
+  skelGrid,
+  skelListing,
+  skelRail,
+  skelReader,
+  type ReaderCtx,
+} from './views';
 
-const esc = (v: unknown): string =>
-  String(v ?? '').replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
-  );
+const BRAND = 'Panel';
 
-const msg = (e: unknown) =>
-  e instanceof ApiError || e instanceof Error ? e.message : 'Terjadi kesalahan';
+const msg = (e: unknown): string => {
+  if (e instanceof ApiError && e.code === 404) return 'Konten yang diminta tidak ditemukan (404).';
+  return e instanceof ApiError || e instanceof Error ? e.message : 'Terjadi kesalahan';
+};
 
-/** /manga/black-clover-indonesia/ -> black-clover-indonesia */
-function slugFromPath(): string {
-  const rest = location.pathname.split('/').filter(Boolean).slice(1).join('/');
-  return decodeURIComponent(rest.replace(/\/+$/, ''));
+const setTitle = (t?: string) => {
+  document.title = t ? `${t} — ${BRAND}` : `${BRAND} — Baca manga, manhwa & manhua`;
+};
+
+const appEl = (): HTMLElement | null => document.getElementById('app');
+
+function showError(el: HTMLElement, e: unknown, retry: () => void): void {
+  el.setAttribute('aria-busy', 'false');
+  el.innerHTML = `<div class="notice" role="alert">
+    <p class="notice-title">Gagal memuat</p>
+    <p>${esc(msg(e))}</p>
+    <button type="button" class="btn btn-primary" data-retry>Coba lagi</button>
+  </div>`;
+  el.querySelector('[data-retry]')?.addEventListener('click', retry);
 }
 
-async function mount(id: string, render: (el: HTMLElement) => Promise<void>): Promise<void> {
-  const el = document.getElementById(id);
+interface LoadOpts<T> {
+  path: string;
+  /** Pengambil data khusus; default `get(path)`. `force` = lewati cache (validasi ulang). */
+  fetcher?: (force: boolean) => Promise<T>;
+  skeleton: string;
+  render: (data: T) => void;
+  /** false = jangan validasi ulang di latar belakang (mis. reader: render ulang akan mereset scroll). */
+  revalidate?: boolean;
+}
+
+function loadView<T>(el: HTMLElement, o: LoadOpts<T>): void {
+  let shown = '';
+  const show = (data: T) => {
+    shown = JSON.stringify(data);
+    el.setAttribute('aria-busy', 'false');
+    o.render(data);
+  };
+  const fetchIt = (force: boolean) => (o.fetcher ? o.fetcher(force) : get<T>(o.path, { force }));
+  const retry = () => loadView(el, o);
+
+  const hit = peekEntry<T>(o.path);
+  if (hit) {
+    try {
+      show(hit.data);
+    } catch (e) {
+      showError(el, e, retry);
+      return;
+    }
+    if (o.revalidate !== false && hit.age > STALE_MS) {
+      fetchIt(true)
+        .then((fresh) => {
+          if (JSON.stringify(fresh) !== shown) show(fresh);
+        })
+        .catch(() => {
+          /* data lama sudah tampil dan valid; kegagalan validasi ulang tidak perlu mengganggu pengguna */
+        });
+    }
+    return;
+  }
+
+  el.setAttribute('aria-busy', 'true');
+  el.innerHTML = o.skeleton;
+  fetchIt(false)
+    .then(show)
+    .catch((e) => showError(el, e, retry));
+}
+
+/* ----------------------------------------------------------------- search */
+
+export function mountSearch(q: string): void {
+  const el = appEl();
   if (!el) return;
-  el.innerHTML = '<p class="muted">Memuat…</p>';
-  try {
-    await render(el);
-  } catch (e) {
-    el.innerHTML = `<p class="err">Gagal memuat: ${esc(msg(e))}</p>`;
+  setTitle(q ? `Cari: ${q}` : 'Cari manga');
+  if (!q) {
+    el.setAttribute('aria-busy', 'false');
+    el.innerHTML = `<div class="page-head"><h1>Cari manga</h1></div>
+      <p class="empty">Ketik judul di kolom pencarian di atas untuk mulai mencari.</p>`;
+    return;
+  }
+  loadView<Manga[]>(el, {
+    path: paths.search(q),
+    skeleton: `<div class="page-head" aria-hidden="true"><span class="sk sk-title"></span></div>${skelGrid(12)}${SR_LOADING}`,
+    render: (results) => {
+      el.innerHTML = `<div class="page-head"><h1>Hasil untuk “${esc(q)}”</h1>${
+        results.length ? `<p class="muted">${results.length} judul ditemukan</p>` : ''
+      }</div>${
+        results.length
+          ? gridHtml(results)
+          : `<p class="empty">Tidak ada hasil untuk “${esc(q)}”. Coba kata kunci lain.</p>`
+      }`;
+      observeCards(el);
+    },
+  });
+}
+
+/* ----------------------------------------------------------- manga detail */
+
+export function mountMangaDetail(slug: string): void {
+  const el = appEl();
+  if (!el) return;
+  loadView<MangaInfo>(el, {
+    path: paths.info(slug),
+    skeleton: skelDetail(),
+    render: (info) => {
+      // Render ulang karena data berubah: pertahankan filter & posisi scroll daftar.
+      const prevFilter = el.querySelector<HTMLInputElement>('[data-filter]')?.value ?? '';
+      const prevScroll = el.querySelector<HTMLElement>('.chapter-list')?.scrollTop ?? 0;
+
+      el.innerHTML = detailHtml(info);
+      setTitle(info.title);
+      wireChapterFilter(el, prevFilter);
+      const list = el.querySelector<HTMLElement>('.chapter-list');
+      if (list) list.scrollTop = prevScroll;
+
+      // Halaman berikutnya yang paling mungkin dibuka: chapter pertama & terbaru.
+      const chapters = info.chapter_list ?? [];
+      if (chapters.length) {
+        prefetchPath(paths.chapter(chapterSlug(chapters[chapters.length - 1].endpoint)), 'low');
+        prefetchPath(paths.chapter(chapterSlug(chapters[0].endpoint)), 'low');
+      }
+    },
+  });
+}
+
+function wireChapterFilter(el: HTMLElement, initial: string): void {
+  const input = el.querySelector<HTMLInputElement>('[data-filter]');
+  const items = Array.from(el.querySelectorAll<HTMLElement>('.chapter-list > li'));
+  const empty = el.querySelector<HTMLElement>('[data-empty]');
+  const count = el.querySelector<HTMLElement>('[data-count]');
+  if (!input) return;
+
+  const apply = () => {
+    const q = input.value.trim().toLowerCase();
+    let shown = 0;
+    for (const li of items) {
+      const ok = !q || (li.textContent ?? '').toLowerCase().includes(q);
+      li.hidden = !ok;
+      if (ok) shown++;
+    }
+    if (empty) empty.hidden = shown > 0;
+    if (count) count.textContent = q ? `${shown} dari ${items.length} chapter` : `${items.length} chapter`;
+  };
+  input.addEventListener('input', apply);
+  if (initial) {
+    input.value = initial;
+    apply();
   }
 }
 
-/** Kartu manga yang dipakai ulang di halaman detail/daftar. */
-const card = (m: Manga) => `
-  <a class="card" href="/manga/${esc(slugOf(m.endpoint))}/">
-    <img src="${esc(m.image)}" alt="${esc(m.title)}" loading="lazy" />
-    <span class="card-title">${esc(m.title)}</span>
-  </a>`;
+/* ----------------------------------------------------------------- reader */
 
-export function mountSearch(): void {
-  const params = new URLSearchParams(location.search);
-  const q = (params.get('q') ?? '').trim();
-  const input = document.getElementById('q') as HTMLInputElement | null;
-  if (input && q) input.value = q;
+export function mountChapter(slug: string): void {
+  const el = appEl();
+  if (!el) return;
 
-  void mount('app', async (el) => {
-    if (!q) {
-      el.innerHTML = '<p class="muted">Masukkan kata kunci untuk mulai mencari manga.</p>';
-      return;
+  const mangaSlug = mangaSlugOfChapter(slug);
+  const infoPath = mangaSlug ? paths.info(mangaSlug) : undefined;
+  let info: MangaInfo | undefined = infoPath ? peek<MangaInfo>(infoPath) : undefined;
+  let infoFailed = false;
+  let chTitle = ''; // judul dari API chapter: cadangan bila nama chapter tak diketahui
+  let ctx: ReaderCtx = { title: '', state: 'none' };
+  const stepLinks: { prev?: string; next?: string } = {};
+
+  /** Susun keadaan navigasi dari info manga (kalau sudah ada) + slug chapter ini. */
+  const buildCtx = (): ReaderCtx => {
+    if (!mangaSlug) return { title: chTitle, state: 'none' };
+    const base: ReaderCtx = { title: chTitle, state: 'ready', back: mangaSlug };
+    if (infoFailed) return base;
+    if (!info) return { ...base, state: 'pending' };
+    const list = info.chapter_list ?? [];
+    const i = list.findIndex((c) => chapterSlug(c.endpoint).toLowerCase() === slug.toLowerCase());
+    const step = (c?: { name: string; endpoint: string }) =>
+      c ? { slug: chapterSlug(c.endpoint), name: c.name } : undefined;
+    // chapter_list urut terbaru -> terlama: indeks lebih besar = chapter lebih awal.
+    return i < 0
+      ? { ...base, mangaTitle: info.title }
+      : { ...base, mangaTitle: info.title, current: list[i].name, prev: step(list[i + 1]), next: step(list[i - 1]) };
+  };
+
+  /** Perbarui header + semua bar navigasi (dipanggil saat chapter selesai dirender dan saat info tiba). */
+  const applyNav = () => {
+    ctx = buildCtx();
+    const put = (pos: string, html: string) => {
+      const slot = el.querySelector(`[data-rnav-slot="${pos}"]`);
+      if (slot) slot.innerHTML = html;
+    };
+    put('head', readerHeadHtml(ctx));
+    put('top', readerNavHtml(ctx, 'top'));
+    put('end', readerNavHtml(ctx, 'end'));
+    put('fixed', readerNavHtml(ctx, 'fixed'));
+    setTitle(ctx.mangaTitle ? `${ctx.mangaTitle} — ${readerTitle(ctx)}` : readerTitle(ctx));
+    stepLinks.prev = el.querySelector<HTMLAnchorElement>('a[rel="prev"]')?.href;
+    stepLinks.next = el.querySelector<HTMLAnchorElement>('a[rel="next"]')?.href;
+    bar = el.querySelector<HTMLElement>('.fixbar');
+    syncBar();
+  };
+
+  /* Bar bawah: sembunyi saat scroll turun, muncul saat scroll naik / di awal chapter / (disembunyikan) di akhir chapter. */
+  let bar: HTMLElement | null = null;
+  let lastY = window.scrollY;
+  let scrollHidden = false;
+  const syncBar = () => {
+    if (!bar) return;
+    const y = window.scrollY;
+    const dy = y - lastY;
+    if (Math.abs(dy) >= 4) {
+      lastY = y; // akumulasi: scroll pelan tetap terdeteksi
+      if (dy > 0) scrollHidden = true;
+      else scrollHidden = false;
     }
-    const results = await search(q);
-    el.innerHTML = results.length
-      ? `<h2>Hasil untuk “${esc(q)}”</h2><div class="grid">${results.map(card).join('')}</div>`
-      : `<p class="muted">Tidak ada hasil untuk “${esc(q)}”.</p>`;
+    if (y < 80) scrollHidden = false;
+    const atEnd = y + window.innerHeight >= document.documentElement.scrollHeight - 80; // nav akhir chapter sudah terlihat
+    bar.classList.toggle('is-hidden', scrollHidden || atEnd);
+  };
+
+  // Info manga (untuk prev/next & nama chapter) dimuat PARALEL dengan chapter, bukan setelahnya.
+  if (infoPath && !info) {
+    get<MangaInfo>(infoPath)
+      .then((i) => {
+        info = i;
+        applyNav();
+      })
+      .catch(() => {
+        infoFailed = true; // hanya tombol kembali; prev/next dihilangkan, judul pakai judul API
+        applyNav();
+      });
+  }
+
+  loadView<ChapterDetail>(el, {
+    path: paths.chapter(slug),
+    skeleton: skelReader(),
+    revalidate: false, // render ulang akan mereset posisi baca
+    render: (ch) => {
+      chTitle = ch.title;
+      ctx = buildCtx();
+      el.innerHTML = readerHtml(ch, ctx);
+      applyNav();
+    },
+  });
+
+  // Satu listener scroll (rAF-throttled): bar bawah + prefetch chapter berikutnya di ~50% halaman.
+  let ticking = false;
+  let prefetched = false;
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        syncBar();
+        if (!prefetched && ctx.next) {
+          const doc = document.documentElement;
+          const progress = (window.scrollY + window.innerHeight) / Math.max(1, doc.scrollHeight);
+          if (progress > 0.5) {
+            prefetched = true;
+            prefetchPath(paths.chapter(ctx.next.slug), 'high');
+          }
+        }
+      });
+    },
+    { passive: true },
+  );
+  // Fokus keyboard ke bar yang tersembunyi: tampilkan.
+  el.addEventListener('focusin', (e) => {
+    if (e.target instanceof Element && e.target.closest('.fixbar')) bar?.classList.remove('is-hidden');
+  });
+
+  // Pintasan keyboard: ← chapter sebelumnya, → berikutnya.
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const href = e.key === 'ArrowLeft' ? stepLinks.prev : e.key === 'ArrowRight' ? stepLinks.next : undefined;
+    if (href) location.assign(href);
   });
 }
 
-export function mountMangaDetail(): void {
-  void mount('app', async (el) => {
-    const info = await getInfo(slugFromPath());
-    const genres = (info.genre ?? [])
-      .map((g) => `<span class="tag">${esc(g)}</span>`)
-      .join('');
-    const chapters = (info.chapter_list ?? [])
-      .map(
-        (c) => `<li><a href="/chapter/${esc(slugOf(c.endpoint))}/">${esc(c.name)}</a></li>`,
-      )
-      .join('');
+/* ---------------------------------------------------------------- listing */
 
-    el.innerHTML = `
-      <article class="detail">
-        <img class="cover" src="${esc(info.thumbnail)}" alt="${esc(info.title)}" />
-        <div>
-          <h1>${esc(info.title)}</h1>
-          <ul class="meta">
-            <li><b>Tipe</b> ${esc(info.type ?? '-')}</li>
-            <li><b>Pengarang</b> ${esc(info.author ?? '-')}</li>
-            <li><b>Status</b> ${esc(info.status ?? '-')}</li>
-            <li><b>Rating</b> ${esc(info.rating ?? '-')}</li>
-          </ul>
-          <div class="tags">${genres || '<span class="muted">Tanpa genre</span>'}</div>
-        </div>
-      </article>
-      <h2>Daftar Chapter</h2>
-      <ul class="chapters">${chapters || '<li class="muted">Belum ada chapter.</li>'}</ul>`;
+const prettySlug = (s: string) =>
+  s
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' | 'newest' }>): void {
+  const el = appEl();
+  if (!el) return;
+  const { page } = route;
+
+  let pathFor: (p: number) => string;
+  let knownTitle: string | undefined;
+  let title: string;
+  let hrefFor: (p: number) => string;
+  if (route.kind === 'genre') {
+    pathFor = (p) => paths.byGenre(route.slug, p);
+    // Judul asli dari daftar genre bila sudah ada di cache; kalau belum, rapikan slug-nya.
+    knownTitle = peek<Genre[]>(paths.genres())?.find((g) => chapterSlug(g.endpoint) === route.slug)?.title;
+    title = `Genre: ${knownTitle ?? prettySlug(route.slug)}`;
+    hrefFor = (p) => genreHref(route.slug, p);
+  } else if (route.kind === 'popular') {
+    pathFor = paths.popular;
+    title = 'Manga Populer';
+    hrefFor = (p) => listHref('populer', p);
+  } else {
+    pathFor = paths.newest;
+    title = 'Rilis Terbaru';
+    hrefFor = (p) => listHref('terbaru', p);
+  }
+  const path = pathFor(page);
+  setTitle(page > 1 ? `${title} (halaman ${page})` : title);
+
+  loadView<Manga[]>(el, {
+    path,
+    // Melewati halaman terakhir, API menjawab 404: itu "habis", bukan error.
+    fetcher: (force) =>
+      get<Manga[]>(path, { force }).catch((e) => {
+        if (e instanceof ApiError && e.code === 404 && page > 1) return [] as Manga[];
+        throw e;
+      }),
+    skeleton: skelListing(),
+    render: (list) => {
+      const end = list.length === 0;
+      const hasNext = list.length >= PAGE_SIZE;
+      el.innerHTML = `<div class="page-head"><h1>${esc(title)}</h1><p class="muted">Halaman ${page}</p></div>
+        ${end ? '<p class="empty">Tidak ada data lagi di halaman ini.</p>' : gridHtml(list)}
+        ${pagerHtml({ page, hasNext, href: hrefFor })}`;
+      observeCards(el);
+      if (route.kind === 'genre' && !knownTitle) {
+        // Daftar genre belum ada di cache: ambil, lalu ganti judul hasil rapikan-slug dengan nama aslinya.
+        get<Genre[]>(paths.genres())
+          .then((all) => {
+            const g = all.find((x) => chapterSlug(x.endpoint) === route.slug);
+            const h1 = el.querySelector('h1');
+            if (g && h1) {
+              h1.textContent = `Genre: ${g.title}`;
+              setTitle(page > 1 ? `Genre: ${g.title} (halaman ${page})` : `Genre: ${g.title}`);
+            }
+          })
+          .catch(() => {});
+      }
+      if (hasNext) prefetchPath(pathFor(page + 1), 'low');
+    },
   });
 }
 
-export function mountChapter(): void {
-  void mount('app', async (el) => {
-    const chapter = await getChapter(slugFromPath());
-    const pages = chapter.image
-      .map((src, i) => `<img src="${esc(src)}" alt="Halaman ${i + 1}" loading="lazy" />`)
-      .join('');
-    el.innerHTML = `<h1>${esc(chapter.title)}</h1><div class="pages">${pages}</div>`;
+/* ------------------------------------------------------------------- home */
+
+interface HomeSection {
+  key: string;
+  path: string;
+  render: (data: never) => string;
+  skeleton: string;
+}
+
+const HOME_SECTIONS: HomeSection[] = [
+  { key: 'popular', path: paths.popular(1), render: railHtml, skeleton: skelRail() },
+  { key: 'recommended', path: paths.recommended(1), render: gridHtml, skeleton: skelGrid(12) },
+  { key: 'newest', path: paths.newest(1), render: gridHtml, skeleton: skelGrid(12) },
+  { key: 'genre', path: paths.genres(), render: genreCloud, skeleton: skelChips() },
+];
+
+/**
+ * Beranda sudah berisi data hasil prerender (build time). Di sini kita ambil
+ * data terbaru di latar belakang dan menukar isi section HANYA bila berbeda
+ * (`data-sig`). Markup identik, jadi tidak ada layout jump. Section yang gagal
+ * di-prerender (`data-sig` kosong) menampilkan skeleton lalu diisi di sini.
+ */
+export function mountHome(): void {
+  for (const sec of HOME_SECTIONS) {
+    const body = document.querySelector<HTMLElement>(`[data-sec="${sec.key}"] [data-body]`);
+    if (!body) continue;
+
+    const apply = (data: unknown) => {
+      body.setAttribute('aria-busy', 'false');
+      const s = sig(data);
+      if (body.dataset.sig === s) return;
+      body.innerHTML = sec.render(data as never);
+      body.dataset.sig = s;
+      observeCards(body);
+    };
+
+    const fail = (e: unknown) => {
+      if (body.dataset.sig) return; // data lama masih tampil dan valid
+      showError(body, e, () => {
+        body.setAttribute('aria-busy', 'true');
+        body.innerHTML = sec.skeleton + SR_LOADING;
+        refresh();
+      });
+    };
+
+    const refresh = () => {
+      get<unknown>(sec.path, { force: true }).then(apply).catch(fail);
+    };
+
+    const hit = peekEntry<unknown>(sec.path);
+    if (hit) {
+      apply(hit.data);
+      if (hit.age <= STALE_MS) continue;
+    }
+    refresh();
+  }
+
+  // "Semua genre": handler delegated supaya tetap jalan setelah section ditukar.
+  document.querySelector('[data-sec="genre"]')?.addEventListener('click', (e) => {
+    const btn = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('[data-more-genres]') : null;
+    if (!btn) return;
+    const open = btn.getAttribute('aria-expanded') !== 'true';
+    btn.closest('[data-body]')
+      ?.querySelectorAll<HTMLElement>('[data-more]')
+      .forEach((li) => (li.hidden = !open));
+    btn.setAttribute('aria-expanded', String(open));
+    btn.textContent = open ? 'Tampilkan lebih sedikit' : `Semua genre (${btn.closest('[data-body]')?.querySelectorAll('.chip').length ?? ''})`;
   });
+
+  // Tombol geser baris Populer (untuk mouse tanpa trackpad).
+  document.querySelectorAll<HTMLButtonElement>('[data-rail-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const rail = document.querySelector<HTMLElement>('[data-sec="popular"] .rail');
+      if (!rail) return;
+      const dir = btn.dataset.railBtn === 'next' ? 1 : -1;
+      rail.scrollBy({ left: dir * rail.clientWidth * 0.85, behavior: 'smooth' });
+    });
+  });
+}
+
+/* -------------------------------------------------------------- not found */
+
+export function mountUnknown(): void {
+  const el = appEl();
+  if (!el) return;
+  el.setAttribute('aria-busy', 'false');
+  setTitle('Halaman tidak ditemukan');
+  el.innerHTML = `<div class="notice"><p class="notice-title">Halaman tidak ditemukan</p>
+    <p>Alamat yang kamu buka tidak dikenal.</p><a class="btn btn-primary" href="/">Kembali ke beranda</a></div>`;
 }
