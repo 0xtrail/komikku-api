@@ -30,11 +30,11 @@ import { genreHref, listHref, mangaSlugOfChapter, type Route } from './routes';
 import { observeCards, prefetchPath } from './prefetch';
 import {
   SR_LOADING,
+  cardHtml,
   detailHtml,
   esc,
   genreCloud,
   gridHtml,
-  pagerHtml,
   railHtml,
   readerHtml,
   readerHeadHtml,
@@ -340,6 +340,174 @@ const prettySlug = (s: string) =>
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 
+/** Jarak (px) di bawah viewport tempat halaman berikutnya mulai dimuat. */
+const FEED_MARGIN = 800;
+
+/** Halaman berturut-turut tanpa satu kartu baru pun dianggap akhir daftar (cegah scrape tanpa henti). */
+const FEED_STALL_MAX = 3;
+
+interface FeedOpts {
+  /** `<ul class="grid">` yang sudah berisi halaman awal; halaman berikutnya ditambahkan ke sini. */
+  grid: HTMLElement;
+  /** Elemen di bawah grid: sentinel scroll sekaligus tempat status. */
+  status: HTMLElement;
+  /** Nomor halaman awal dan isinya (sudah ada di `grid`). */
+  start: number;
+  first: Manga[];
+  pathFor: (page: number) => string;
+  /** Jumlah halaman yang tercatat terakhir kali dimuat (back/reload); dipulihkan dari cache. */
+  restore: number;
+}
+
+interface Feed {
+  /** Jumlah halaman yang sudah tampil, termasuk halaman awal. */
+  pages: () => number;
+  /** Lepas observer. Setelah ini feed tidak menyentuh DOM lagi. */
+  stop: () => void;
+}
+
+/**
+ * Daftar tanpa akhir: saat sentinel mendekati viewport, halaman berikutnya
+ * diambil (`get` -> cache, dedupe request, prefetch ikut terpakai) dan kartunya
+ * ditambahkan ke grid yang sama lewat `insertAdjacentHTML` — DOM yang ada tidak
+ * dibangun ulang, jadi posisi scroll tidak bergeser.
+ *
+ * Halaman ke-n selalu `start + loaded`, jadi tidak perlu penghitung terpisah.
+ * Keadaan: idle (siap/tombol manual) -> loading -> idle | error | end. Hanya
+ * satu request berjalan; error tidak diulang otomatis (tombol "Coba lagi").
+ */
+function startFeed(o: FeedOpts): Feed {
+  const { grid, status, start, pathFor } = o;
+  const seen = new Set<string>(); // endpoint: daftar upstream bisa bergeser antar halaman (mis. terbaru)
+  for (const m of o.first) seen.add(m.endpoint);
+  let loaded = 1;
+  let stall = 0;
+  let state: 'idle' | 'loading' | 'error' | 'end' = o.first.length < PAGE_SIZE ? 'end' : 'idle';
+  let stopped = false;
+  let io: IntersectionObserver | undefined;
+
+  const paint = () => {
+    status.dataset.state = state;
+    status.innerHTML =
+      state === 'loading'
+        ? `<span class="feed-spinner" aria-hidden="true"></span><span>Memuat halaman ${start + loaded}…</span>`
+        : state === 'error'
+          ? '<p>Gagal memuat halaman berikutnya.</p><button type="button" class="btn" data-feed-retry>Coba lagi</button>'
+          : state === 'end'
+            ? '<p>Sudah sampai akhir daftar.</p>'
+            : '<button type="button" class="btn" data-feed-more>Muat lagi</button>';
+  };
+
+  /** Tambahkan kartu yang belum pernah tampil; kembalikan jumlahnya. */
+  const append = (list: Manga[]): number => {
+    const items = list.filter((m) => {
+      if (seen.has(m.endpoint)) return false;
+      seen.add(m.endpoint);
+      return true;
+    });
+    if (items.length) {
+      grid.insertAdjacentHTML('beforeend', items.map((m) => `<li>${cardHtml(m)}</li>`).join(''));
+      observeCards(grid);
+    }
+    return items.length;
+  };
+
+  /** Catat jumlah halaman di entri history (URL tidak berubah) agar back/reload bisa memulihkannya. */
+  const record = () => {
+    try {
+      history.replaceState({ ...history.state, feedPages: loaded }, '');
+    } catch {
+      /* history tidak bisa ditulis: pemulihan saja yang hilang */
+    }
+  };
+
+  /** Halaman `loaded` baru saja tampil (`added` kartu baru): akhir daftar atau masih ada lagi? */
+  const advance = (list: Manga[], added: number) => {
+    stall = added ? 0 : stall + 1;
+    state = list.length < PAGE_SIZE || stall >= FEED_STALL_MAX ? 'end' : 'idle';
+  };
+
+  /** Tampilkan keadaan sekarang; bila masih ada halaman, hangatkan berikutnya dan minta IO menilai ulang. */
+  const settle = () => {
+    paint();
+    if (state === 'end') {
+      io?.disconnect();
+      return;
+    }
+    prefetchPath(pathFor(start + loaded), 'low');
+    // IO tidak menembak lagi bila sentinel tidak pernah keluar dari zona (halaman penuh duplikat,
+    // layar tinggi). Observe ulang mengirim entri awal baru, sehingga muat berlanjut sampai zona terisi.
+    if (io) {
+      io.unobserve(status);
+      io.observe(status);
+    }
+  };
+
+  const load = async () => {
+    if (stopped || state === 'loading' || state === 'end') return;
+    const n = start + loaded;
+    state = 'loading';
+    paint();
+    let list: Manga[];
+    try {
+      // Melewati halaman terakhir, API menjawab 404: itu "habis", bukan error.
+      list = await get<Manga[]>(pathFor(n)).catch((e) => {
+        if (e instanceof ApiError && e.code === 404) return [] as Manga[];
+        throw e;
+      });
+    } catch {
+      if (stopped) return;
+      state = 'error';
+      io?.unobserve(status); // tanpa percobaan ulang otomatis; lanjut hanya lewat tombol
+      paint();
+      return;
+    }
+    if (stopped) return;
+    if (list.length) {
+      loaded++;
+      advance(list, append(list));
+      record();
+      settle();
+    } else {
+      state = 'end';
+      paint();
+      io?.disconnect();
+    }
+  };
+
+  // Pulihkan halaman yang tadinya sudah dimuat, hanya dari cache dan sinkron, supaya
+  // restorasi scroll browser mendarat di tempat yang benar. Berhenti di halaman pertama yang tidak ada di cache.
+  while (state === 'idle' && loaded < o.restore) {
+    const cached = peek<Manga[]>(pathFor(start + loaded));
+    if (!cached?.length) break;
+    loaded++;
+    advance(cached, append(cached));
+  }
+  if (o.restore > 1) record();
+
+  if (typeof IntersectionObserver !== 'undefined' && state === 'idle') {
+    io = new IntersectionObserver(
+      (entries) => {
+        if (state === 'idle' && entries.some((e) => e.isIntersecting)) void load();
+      },
+      { rootMargin: `0px 0px ${FEED_MARGIN}px 0px` },
+    );
+  }
+  settle(); // tanpa IO: tombol "Muat lagi" jadi satu-satunya pemicu
+
+  status.addEventListener('click', (e) => {
+    if (e.target instanceof Element && e.target.closest('[data-feed-more], [data-feed-retry]')) void load();
+  });
+
+  return {
+    pages: () => loaded,
+    stop: () => {
+      stopped = true;
+      io?.disconnect();
+    },
+  };
+}
+
 export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' | 'newest' }>): void {
   const el = appEl();
   if (!el) return;
@@ -367,6 +535,10 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
   const path = pathFor(page);
   setTitle(page > 1 ? `${title} (halaman ${page})` : title);
 
+  // Entri history ini mungkin mencatat berapa halaman yang sempat dimuat (back/reload).
+  const recorded = Number((history.state as { feedPages?: unknown } | null)?.feedPages);
+  let feed: Feed | undefined;
+
   loadView<Manga[]>(el, {
     path,
     // Melewati halaman terakhir, API menjawab 404: itu "habis", bukan error.
@@ -377,12 +549,35 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
       }),
     skeleton: skelListing(),
     render: (list) => {
-      const end = list.length === 0;
-      const hasNext = list.length >= PAGE_SIZE;
-      el.innerHTML = `<div class="page-head"><h1>${esc(title)}</h1><p class="muted">Halaman ${page}</p></div>
-        ${end ? '<p class="empty">Tidak ada data lagi di halaman ini.</p>' : gridHtml(list)}
-        ${pagerHtml({ page, hasNext, href: hrefFor })}`;
+      // Validasi ulang di latar belakang memanggil render lagi. Bila pengguna sudah menambah halaman,
+      // jangan timpa: feed terhapus dan scroll melompat. Selama baru halaman awal, render ulang aman.
+      if (feed && feed.pages() > 1) return;
+      feed?.stop();
+      feed = undefined;
+
+      const head = `<div class="page-head"><h1>${esc(title)}</h1>${
+        page > 1
+          ? `<p class="muted">Mulai dari halaman ${page} · <a href="${esc(hrefFor(page - 1))}">halaman sebelumnya</a></p>`
+          : ''
+      }</div>`;
+      el.innerHTML = list.length
+        ? `${head}${gridHtml(list)}<div class="feed-status" aria-live="polite"></div>`
+        : `${head}<p class="empty">Tidak ada data lagi di halaman ini.</p>`;
       observeCards(el);
+
+      const grid = el.querySelector<HTMLElement>('.grid');
+      const status = el.querySelector<HTMLElement>('.feed-status');
+      if (grid && status) {
+        feed = startFeed({
+          grid,
+          status,
+          start: page,
+          first: list,
+          pathFor,
+          restore: Number.isFinite(recorded) ? recorded : 1,
+        });
+      }
+
       if (route.kind === 'genre' && !knownTitle) {
         // Daftar genre belum ada di cache: ambil, lalu ganti judul hasil rapikan-slug dengan nama aslinya.
         get<Genre[]>(paths.genres())
@@ -396,7 +591,6 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
           })
           .catch(() => {});
       }
-      if (hasNext) prefetchPath(pathFor(page + 1), 'low');
     },
   });
 }

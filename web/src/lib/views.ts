@@ -296,17 +296,3 @@ export function readerHtml(ch: ChapterDetail, ctx: ReaderCtx): string {
     <div data-rnav-slot="fixed">${readerNavHtml(ctx, 'fixed')}</div>
   </div>`;
 }
-
-/* ----------------------------------------------------------------- pager */
-
-export function pagerHtml(opts: { page: number; hasNext: boolean; href: (page: number) => string }): string {
-  const { page, hasNext, href } = opts;
-  const prev =
-    page > 1
-      ? `<a class="btn" rel="prev" href="${esc(href(page - 1))}">&larr; Sebelumnya</a>`
-      : '<span class="btn is-disabled" aria-disabled="true">&larr; Sebelumnya</span>';
-  const next = hasNext
-    ? `<a class="btn btn-primary" rel="next" href="${esc(href(page + 1))}">Berikutnya &rarr;</a>`
-    : '<span class="btn is-disabled" aria-disabled="true">Berikutnya &rarr;</span>';
-  return `<nav class="pager" aria-label="Halaman daftar">${prev}<span class="pager-page" aria-current="page">Halaman ${page}</span>${next}</nav>`;
-}
