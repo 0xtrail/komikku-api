@@ -9,10 +9,11 @@ import (
 )
 
 type Env struct {
-	RootApp            string
-	HTTPPort           uint16
-	BaseURL			   string
-	APIURL             string
+	RootApp        string
+	HTTPPort       uint16
+	BaseURL        string
+	APIURL         string
+	AllowedOrigins []string
 }
 
 var GlobalEnv Env
@@ -53,6 +54,15 @@ func init() {
 		apiURL = defaultAPIURL
 	}
 	GlobalEnv.APIURL = withTrailingSlash(apiURL)
+
+	// ALLOWED_ORIGINS is optional and comma separated. An empty value keeps the
+	// previous wildcard behaviour, but it is logged because it means any browser
+	// on the internet may call this API.
+	GlobalEnv.AllowedOrigins = splitOrigins(os.Getenv("ALLOWED_ORIGINS"))
+	if len(GlobalEnv.AllowedOrigins) == 0 {
+		log.Println("ALLOWED_ORIGINS is not set, CORS is open to every origin")
+		GlobalEnv.AllowedOrigins = []string{"*"}
+	}
 }
 
 const defaultAPIURL = "https://api.komiku.org/"
@@ -60,4 +70,17 @@ const defaultAPIURL = "https://api.komiku.org/"
 // withTrailingSlash makes sure the URL ends with exactly one "/".
 func withTrailingSlash(u string) string {
 	return strings.TrimRight(strings.TrimSpace(u), "/") + "/"
+}
+
+// splitOrigins parses the comma separated ALLOWED_ORIGINS value, trimming
+// whitespace and dropping empty entries. Echo turns a "*" in an entry into a
+// regexp wildcard, so "https://*.pages.dev" matches any Pages preview host.
+func splitOrigins(v string) []string {
+	var origins []string
+	for _, origin := range strings.Split(v, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
