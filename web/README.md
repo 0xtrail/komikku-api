@@ -43,7 +43,12 @@ src/components/            Nav.astro (header + sub-menu Daftar + kotak saran), T
 src/lib/api.ts             satu-satunya modul pemanggil API + cache (memori + sessionStorage)
 src/lib/routes.ts          URL halaman -> rute -> path API (dipakai boot & prefetch)
 src/lib/views.ts           template HTML (string) — dipakai build time DAN browser
-src/lib/client.ts          render halaman dari cache/skeleton, feed tanpa akhir, reader, hidrasi beranda
+src/lib/client.ts          render halaman dari cache/skeleton (`loadView`), feed tanpa akhir, hidrasi beranda
+src/lib/reader.ts          reader chapter: chapter berurutan, posisi baca, lanjut baca, simpan ke pustaka
+src/lib/readerlogic.ts     logika murni reader (manga/tetangga chapter, `#p<N>`, halaman yang dibaca, batas DOM) — diuji di Node
+src/lib/readerview.ts      template reader (string murni): header + sakelar, bar navigasi, `section.chapter`, slot bawah, toast
+src/lib/readerimg.ts       pemuat gambar halaman (data-src + IntersectionObserver) dan pemanasan gambar chapter berikutnya
+src/lib/readerresume.ts    melompat ke posisi terakhir dan menahannya selama gambar dimuat + toast "Lanjut dari halaman N"
 src/lib/detail.ts          halaman detail manga: sinopsis, Simpan, Lanjutkan, tanda chapter terbaca
 src/lib/library.ts         pustaka di localStorage: bookmark, riwayat, posisi baca, ekspor/impor, event `library:change`
 src/lib/bookmarks.ts       tombol bookmark `[data-bm]` di kartu/detail + lencana `[data-bm-count]` (satu pendengar klik)
@@ -59,7 +64,7 @@ src/lib/boot.ts            dispatcher: memilih halaman dari URL
 src/lib/site.ts            perilaku header: tema, menu aktif, cari
 public/_redirects          rewrite 200 ke /view/index.html (Cloudflare Pages)
 nginx.conf                 rewrite yang sama untuk image Docker + halaman galat bermerek
-tests/                     tes Node polos (`npm test`): library, views/escape, jenis galat
+tests/                     tes Node polos (`npm test`): library, views/escape, jenis galat, logika + template reader
 ```
 
 Prefix rute dinamis (`manga|chapter|genre|populer|terbaru`) harus sama di
@@ -103,6 +108,56 @@ dipanggil setelah setiap render dan otomatis saat `library:change`.
 (`import` juga dipakai untuk perubahan dari tab lain dan pemulihan bfcache). `subscribe(fn)`
 tetap ada dan menerima `kind` yang sama.
 
+### Reader (`/chapter/<slug>/`)
+
+Satu halaman bisa memuat beberapa chapter berurutan. Hook stabil (untuk restyle/tes):
+
+- `[data-reader]` akar; `[data-chapters]` pembungkus chapter; `section.chapter[data-chapter="<slug>"]
+  [data-chapter-name]` per chapter; `.chapter-divider` (+ `.chapter-divider-name`,
+  `a.chapter-divider-link`) di awal chapter yang ditambahkan; `.pages` berisi `img.page[data-page="<1-based>"]`
+  (tanpa `id`, jadi tidak pernah ganda antar-chapter).
+- `[data-append-slot]` (= `[data-rnav-slot="end"]`) di bawah chapter terakhir dengan
+  `data-state="idle|loading|end|off|error"`: tautan manual "Lanjut: <nama>", penunjuk memuat, navigasi akhir
+  ("Ini chapter terbaru" bila pasti terbaru), navigasi akhir klasik (sakelar mati), atau galat ringkas
+  dengan `[data-retry]`.
+- `[data-autonext-toggle][aria-pressed]` sakelar "Lanjut otomatis" di header, tersimpan di
+  `localStorage` kunci `mr:reader:autonext` (`"0"` = mati; selain itu aktif).
+- `[data-read-progress]` ("12 / 69") di bar bawah (`.fix-pg`, ponsel) dan di pil mengambang pojok kanan
+  bawah (`.reader-progress`, >= 860px karena bar bawah disembunyikan di desktop).
+- `[data-reader-toast]` toast lanjut baca dengan `[data-toast-restart]` ("Mulai dari awal") dan `[data-toast-close]`.
+
+**Manga induk tidak bisa ditebak dari slug chapter** (`solo-leveling-ragnarok-chapter-66` ada di
+`/manga/alone-leveling-ragnarok/`). Sumber utama adalah field API chapter `manga_endpoint`, `manga_title`,
+`prev_endpoint`, `next_endpoint` (string kosong = tidak ada; `undefined` = API lama). Tanpa field itu reader
+jatuh ke tebakan dari slug, yang baru dipercaya setelah daftar chapter manga hasil tebakan itu memuat chapter
+ini (sampai itu: tombol navigasi berupa placeholder, tanpa tautan balik, tanpa simpan posisi). Nama chapter
+diambil dari daftar chapter info manga bila ada, kalau tidak dari `title`.
+
+**Chapter yang sedang dibaca** = chapter yang halaman pertamanya sudah melewati garis di 30% tinggi layar;
+**halaman yang dibaca** = gambar yang melintasi garis itu + posisi 0..1 di dalamnya. Saat chapter berganti
+(turun atau naik): `history.replaceState` ke URL-nya (tanpa hash), judul tab, header, bar atas/bawah,
+penunjuk halaman, dan target keyboard ←/→ ikut berganti.
+
+**Gambar**: tiga halaman pertama (atau N-1..N+3 saat melompat ke halaman N) langsung punya `src`, yang pertama
+`fetchpriority="high"`; sisanya hanya `data-src` dan diberi `src` oleh IntersectionObserver saat berada dalam
+3 tinggi layar di bawah / 1 di atas (separuhnya saat `saveData`/2G). Pada ~50% chapter JSON chapter
+berikutnya diprefetch, pada ~70% tiga gambar pertamanya dihangatkan (`new Image()`, prioritas rendah).
+
+**Lanjut baca**: `#p<N>` (1-based) menang atas posisi tersimpan untuk chapter yang sama (halaman > 0);
+`#p1` = dari awal. Reader melompat, lalu menghitung ulang posisi tiap gambar di atas/di halaman target
+selesai dimuat, tiap ukuran dokumen berubah, dan saat layar diputar, sampai pembaca menyentuh (wheel,
+sentuh, tombol, pointer) atau 10 detik lewat; selama itu posisi tidak disimpan. Toast "Lanjut dari halaman
+N" bisa ditutup atau "Mulai dari awal". Posisi disimpan paling sering sekali per detik dan saat
+`pagehide`/`visibilitychange`; chapter ditandai terbaca saat halaman terakhirnya tercapai atau pembaca
+berlanjut ke chapter berikutnya.
+
+**Chapter berikutnya**: bila sakelar aktif dan chapter berikutnya ada, saat dasar chapter terakhir kurang
+dari ~1,5 tinggi layar di bawah layar, chapter itu diambil (`get`, memakai cache prefetch) dan ditambahkan
+di bawah dengan pembatas. Maksimum 3 chapter di DOM: yang tertua dibuang bila sudah seluruhnya di atas layar
+dan bukan yang sedang dibaca, dengan kompensasi scroll (`html.is-trimming` mematikan scroll anchoring
+browser selama pembuangan). Gagal mengambil -> galat ringkas di slot dan tidak diulang otomatis (kecuali
+offline -> saat kembali online); "Coba lagi" mengulang.
+
 ### Halaman dan keadaan galat
 
 Tidak ada halaman galat bawaan yang tampil ke pengguna.
@@ -132,7 +187,8 @@ npm test    # node --experimental-strip-types --test "tests/*.test.ts"
 ```
 
 Node polos, tanpa dependensi tambahan (Node >= 22.12; mulai 22.18 flag-nya tidak diperlukan).
-Berkas yang diuji (`library.ts`, `views.ts`, `routes.ts`, `api.ts`, `errorview.ts`, `images.ts`)
+Berkas yang diuji (`library.ts`, `views.ts`, `routes.ts`, `api.ts`, `errorview.ts`, `images.ts`,
+`readerlogic.ts`, `readerview.ts`)
 hanya memakai sintaks TypeScript yang bisa di-strip (tanpa enum/parameter property) dan
 import relatif dengan ekstensi `.ts` di modul yang diimpor tes. `tests/` dikecualikan dari
 `tsconfig.json` (tanpa `@types/node`); cek tipe: `tsc --noEmit -p .`.
@@ -162,7 +218,7 @@ bisa dilakukan frontend adalah tidak menunggu API saat navigasi:
    (maks 12 per halaman), sentuh/`pointerdown`, dan hover mouse (bonus) memanaskan
    cache. Maks 2 request berjalan bersamaan; mati total bila `saveData` aktif
    atau koneksi 2G. Halaman detail juga memanaskan chapter awal & terbaru; reader
-   memanaskan chapter berikutnya setelah ~50% scroll.
+   memanaskan chapter berikutnya setelah ~50% scroll (JSON) dan ~70% (gambar pertama).
 3. **Skeleton** hanya muncul bila cache kosong (kunjungan pertama ke sebuah data).
 4. **Beranda** di-prerender saat build sebagai paint pertama, lalu data terbaru
    ditukar di latar belakang hanya bila berbeda (`data-sig`). Markup sama persis

@@ -6,8 +6,9 @@
  * apa yang dirender.
  */
 import './site';
-import { mountChapter, mountHome, mountListing, mountSearch, mountUnknown } from './client';
+import { mountHome, mountListing, mountSearch, mountUnknown } from './client';
 import { mountMangaDetail } from './detail';
+import { mountChapter } from './reader';
 import { mountLibrary } from './pustaka';
 import { parseRoute } from './routes';
 

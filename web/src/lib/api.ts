@@ -46,6 +46,15 @@ export interface MangaInfo {
 export interface ChapterDetail {
   title: string;
   image: string[];
+  /**
+   * Dari API yang lebih baru (aditif; string kosong bila tidak ada, `undefined` di API lama):
+   * manga induk (`/manga/<slug>/`) dan tetangga chapter. Sumber utama untuk reader — slug manga
+   * TIDAK bisa ditebak dari slug chapter (`solo-leveling-ragnarok-chapter-66` -> `/manga/alone-leveling-ragnarok/`).
+   */
+  manga_endpoint?: string;
+  manga_title?: string;
+  prev_endpoint?: string;
+  next_endpoint?: string;
 }
 
 /** Envelope tetap dari API: {success, data, message, code} */
