@@ -99,6 +99,13 @@ Prefix rute dinamis (`manga|chapter|genre|populer|terbaru`) harus sama di
 `/pustaka/` hanya butuh query string, jadi mereka file nyata seperti `/search/` dan
 tidak perlu aturan rewrite.
 
+**Cache di nginx** (`nginx.conf`): semua respons selain `/_astro/` (HTML, halaman galat, favicon)
+membawa `Cache-Control: no-cache` (dengan `always`, jadi juga di respons galat) agar browser selalu
+memvalidasi ulang; tanpa itu HTML lama, yang menunjuk bundle ber-hash deploy sebelumnya, bisa
+bertahan berjam-jam di cache heuristik. `/_astro/` tetap `public, max-age=31536000, immutable`.
+`add_header` di sebuah `location` menggantikan (bukan menambah) yang diwarisi dari `server`, jadi
+`/_astro/` menimpa `no-cache`, sedangkan location lain (termasuk halaman galat internal) mewarisinya.
+
 ### Pustaka (localStorage)
 
 `library.ts` menyimpan semuanya di satu kunci, `mr:lib:v1`:
