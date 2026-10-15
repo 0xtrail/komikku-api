@@ -10,10 +10,10 @@ import { syncBookmarkButtons } from './bookmarks';
 import { prefetchPath } from './prefetch';
 import { loadView } from './client';
 import { appEl, setTitle } from './page';
-import { detailHtml, skelDetail, type DetailLib } from './views';
+import { detailHtml, skelDetail, sortAriaLabel, sortLabel, type DetailLib } from './views';
 
 /** Kontrol yang fokusnya dipertahankan saat detail digambar ulang (innerHTML membuang elemen lama). */
-const KEEP_FOCUS = ['[data-bm]', '[data-syn-toggle]', '[data-filter]'];
+const KEEP_FOCUS = ['[data-bm]', '[data-syn-toggle]', '[data-sort]', '[data-filter]'];
 
 export function mountMangaDetail(slug: string): void {
   const el = appEl();
@@ -21,10 +21,11 @@ export function mountMangaDetail(slug: string): void {
   const mslug = slugOf(slug); // kunci pustaka = slug di /manga/<slug>/
   let info: MangaInfo | undefined;
   let synopsisOpen = false;
+  let oldestFirst = false; // urutan daftar chapter; bertahan saat detail digambar ulang
 
   const libState = (): DetailLib => {
     const progress = getProgress(mslug);
-    return { slug: mslug, bookmarked: isBookmarked(mslug), progress, read: new Set(progress?.read), synopsisOpen };
+    return { slug: mslug, bookmarked: isBookmarked(mslug), progress, read: new Set(progress?.read), synopsisOpen, oldestFirst };
   };
 
   /** Gambar detail dari info + pustaka: saat data tiba/berubah dan saat pustaka berubah (tab lain, bfcache, tombol Simpan). */
@@ -39,6 +40,7 @@ export function mountMangaDetail(slug: string): void {
     syncBookmarkButtons(el);
     setTitle(i.title);
     wireChapterFilter(el, prevFilter);
+    fitSynopsis(el);
     const list = el.querySelector<HTMLElement>('.chapter-list');
     if (list) list.scrollTop = prevScroll;
 
@@ -69,17 +71,50 @@ export function mountMangaDetail(slug: string): void {
     if (info) paint(info);
   });
 
-  // Delegated: tetap jalan setelah detail digambar ulang. Tombol Simpan ([data-bm]) ditangani
+  // Delegated: tetap jalan setelah detail digambar ulang. Tombol Bookmark ([data-bm]) ditangani
   // pendengar global di bookmarks.ts; perubahannya kembali ke sini lewat subscribe() di atas.
   el.addEventListener('click', (e) => {
-    if (!(e.target instanceof Element) || !e.target.closest('[data-syn-toggle]')) return;
-    // Di tempat, tanpa render ulang: sampul & daftar chapter tidak ikut berkedip.
-    synopsisOpen = !synopsisOpen;
-    el.querySelector('[data-synopsis]')?.classList.toggle('is-clamped', !synopsisOpen);
-    const btn = el.querySelector('[data-syn-toggle]');
-    btn?.setAttribute('aria-expanded', String(synopsisOpen));
-    if (btn) btn.textContent = synopsisOpen ? 'Ringkas' : 'Selengkapnya';
+    const t = e.target instanceof Element ? e.target : null;
+    if (t?.closest('[data-syn-toggle]')) {
+      // Di tempat, tanpa render ulang: sampul & daftar chapter tidak ikut berkedip.
+      synopsisOpen = !synopsisOpen;
+      el.querySelector('[data-synopsis]')?.classList.toggle('is-clamped', !synopsisOpen);
+      const btn = el.querySelector('[data-syn-toggle]');
+      btn?.setAttribute('aria-expanded', String(synopsisOpen));
+      if (btn) btn.textContent = synopsisOpen ? 'Ringkas' : 'Selengkapnya';
+    } else if (t?.closest('[data-sort]')) {
+      oldestFirst = !oldestFirst;
+      reverseChapters(el, oldestFirst);
+    }
   });
+}
+
+/**
+ * Sinopsis pendek yang tidak benar-benar terpangkas (teks <= 3 baris di layar lebar) tidak butuh tombol
+ * "Selengkapnya": ukur setelah digambar dan sembunyikan bila tak ada yang tersembunyi.
+ */
+function fitSynopsis(el: HTMLElement): void {
+  const sec = el.querySelector<HTMLElement>('[data-synopsis].is-clamped');
+  const body = sec?.querySelector<HTMLElement>('.syn-body');
+  const btn = sec?.querySelector<HTMLButtonElement>('[data-syn-toggle]');
+  if (!sec || !body || !btn) return;
+  if (body.scrollHeight <= body.clientHeight + 1) {
+    sec.classList.remove('is-clamped');
+    btn.hidden = true;
+  }
+}
+
+/** Balik urutan baris chapter di DOM (kotak cari tetap berfungsi: ia memegang elemen `li`, bukan posisinya). */
+function reverseChapters(el: HTMLElement, oldest: boolean): void {
+  const list = el.querySelector<HTMLElement>('.chapter-list');
+  if (list) {
+    list.append(...Array.from(list.children).reverse());
+    list.scrollTop = 0;
+  }
+  const btn = el.querySelector<HTMLElement>('[data-sort]');
+  btn?.setAttribute('aria-label', sortAriaLabel(oldest));
+  const lbl = btn?.querySelector('.sort-lbl');
+  if (lbl) lbl.textContent = sortLabel(oldest);
 }
 
 function wireChapterFilter(el: HTMLElement, initial: string): void {
@@ -98,7 +133,7 @@ function wireChapterFilter(el: HTMLElement, initial: string): void {
       if (ok) shown++;
     }
     if (empty) empty.hidden = shown > 0;
-    if (count) count.textContent = q ? `${shown} dari ${items.length} chapter` : `${items.length} chapter`;
+    if (count) count.textContent = q ? `${shown} dari ${items.length} Chapter` : `${items.length} Chapter`;
   };
   input.addEventListener('input', apply);
   if (initial) {
@@ -106,5 +141,3 @@ function wireChapterFilter(el: HTMLElement, initial: string): void {
     apply();
   }
 }
-
-

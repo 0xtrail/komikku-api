@@ -1,0 +1,29 @@
+---
+// Panel beranda: kepala (ikon ungu, judul, kontrol opsional, tautan pil) + isi (slot).
+// `sec` = kunci data-sec yang dibaca mountHome untuk menukar isi `[data-body]` di dalamnya;
+// panel tanpa `sec` (mis. sidebar Populer) menaruh data-sec di anak-anaknya.
+import { ICON_CLOCK, ICON_EYE, ICON_FLAME, ICON_STAR, ICON_TAG } from '../lib/icons';
+
+const ICONS = { star: ICON_STAR, clock: ICON_CLOCK, flame: ICON_FLAME, tag: ICON_TAG, eye: ICON_EYE } as const;
+
+interface Props {
+	id: string;
+	title: string;
+	icon: keyof typeof ICONS;
+	sec?: string;
+	more?: string;
+	moreLabel?: string;
+	hidden?: boolean;
+}
+
+const { id, title, icon, sec, more, moreLabel = 'Lihat semua', hidden = false } = Astro.props;
+---
+<section class="panel" id={id} aria-labelledby={`h-${id}`} data-sec={sec} hidden={hidden}>
+	<header class="panel-head">
+		<span class="panel-ic" aria-hidden="true"><Fragment set:html={ICONS[icon]} /></span>
+		<h2 id={`h-${id}`}>{title}</h2>
+		<slot name="controls" />
+		{more && <a class="pill pill-link" href={more}>{moreLabel}<span class="sr-only"> {title}</span></a>}
+	</header>
+	<slot />
+</section>

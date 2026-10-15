@@ -1,0 +1,197 @@
+/* Token desain + dasar halaman. Gelap saja: tidak ada tema terang. */
+
+:root {
+	color-scheme: dark;
+
+	/* permukaan */
+	--bg: #13111a;
+	--bg-deep: #0e0b14;
+	--panel: #1f1a2e;
+	--inner: #1c1924;
+	--subtle: rgba(255, 255, 255, 0.05);
+	--footer-bg: #1a1824;
+
+	/* teks */
+	--text: rgba(255, 255, 255, 0.9);
+	--heading: #fff;
+	--muted: rgba(255, 255, 255, 0.6);
+	--muted-2: rgba(255, 255, 255, 0.5);
+
+	/* aksen */
+	--accent: #913fe2;
+	--accent-dark: #7c35c2;
+	--accent-soft: #a78bfa;
+	--accent-tint: rgba(145, 63, 226, 0.2);
+	--grad-accent: linear-gradient(135deg, #913fe2, #7c35c2);
+	--grad-amber: linear-gradient(#ffc414, #f59e0b);
+	--grad-filter: linear-gradient(to right, #1a0e28, #2a1046);
+
+	/* kontrol (tombol filter, kolom isian) */
+	--ctl-border: #3d3655;
+	--ctl-text: #cfd9e9;
+	--ctl-hover: #2a1f3d;
+	--hair: rgba(255, 255, 255, 0.1);
+	--border: #312f40;
+
+	/* status & jenis */
+	--danger: #f87171;
+	--danger-ink: #fca5a5;
+	--dot-manga: #60a5fa;
+	--dot-manhwa: #c084fc;
+	--dot-manhua: #fb923c;
+
+	/* bentuk & gerak */
+	--radius: 6px;
+	--r-sm: 4px;
+	--ring: 0 0 0 2px var(--accent), 0 10px 15px rgba(145, 63, 226, 0.2);
+	--shadow-pop: 0 16px 32px rgba(0, 0, 0, 0.5);
+	--dur: 300ms;
+	--ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+	/* tata letak */
+	--font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--gutter: clamp(12px, 2vw, 16px);
+	--pl: max(var(--gutter), env(safe-area-inset-left, 0px));
+	--pr: max(var(--gutter), env(safe-area-inset-right, 0px));
+	--header-h: 64px;
+	--wrap-pt: 24px;
+	--safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------------------------------------------------------------- base */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+[hidden] {
+	display: none !important;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+	/* header lengket tidak boleh menutupi target anchor */
+	scroll-padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 8px);
+}
+
+body {
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	font-size: 16px; /* >=16px: iOS tidak auto-zoom saat fokus input */
+	line-height: 1.5;
+}
+
+main {
+	position: relative;
+	flex: 1 0 auto;
+	/* strip/latar selebar layar boleh sedikit melewati tepi (100vw + scrollbar) tanpa membuat scroll horizontal */
+	overflow-x: clip;
+}
+
+main > .wrap {
+	padding-top: var(--wrap-pt);
+	padding-bottom: 56px;
+}
+
+img {
+	max-width: 100%;
+}
+
+a {
+	color: var(--accent-soft);
+}
+
+h1,
+h2,
+h3 {
+	margin: 0;
+	color: var(--heading);
+	line-height: 1.2;
+	letter-spacing: -0.01em;
+}
+
+h1 {
+	font-size: 24px;
+	font-weight: 500;
+	letter-spacing: -0.02em;
+}
+
+ul,
+ol {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+button,
+input {
+	font: inherit;
+	font-size: 16px;
+	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent-soft);
+	outline-offset: 2px;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.skip {
+	position: absolute;
+	left: 8px;
+	top: -100px;
+	z-index: 100;
+	padding: 10px 16px;
+	background: var(--accent);
+	color: #fff;
+	border-radius: var(--radius);
+	font-weight: 600;
+	text-decoration: none;
+}
+.skip:focus {
+	top: 8px;
+}
+
+.wrap {
+	width: 100%;
+	max-width: 1285px;
+	margin-inline: auto;
+	padding-left: var(--pl);
+	padding-right: var(--pr);
+}
+
+.muted {
+	color: var(--muted);
+}
+
+/* gerak: tanpa transisi/animasi/geser halus bagi yang memilih mengurangi gerak */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+		scroll-behavior: auto !important;
+	}
+	.card:hover .cover img {
+		transform: none !important;
+	}
+}

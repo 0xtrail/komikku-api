@@ -1,9 +1,11 @@
 ---
-// Kerangka halaman bersama: head, header, <main>. Halaman mengisi <slot />.
+// Kerangka halaman bersama: head, header, <main>, footer. Halaman mengisi <slot />;
+// slot `hero` (opsional) ada di dalam <main> tetapi di luar kolom `.wrap` (strip selebar layar).
+// Tampilan gelap saja (tanpa tema terang & tombol tema).
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
-import TabBar from '../components/TabBar.astro';
 import { API_BASE } from '../lib/api';
+import { PANEL_MARK } from '../lib/icons';
 
 interface Props {
 	title?: string;
@@ -20,15 +22,15 @@ const {
 	view,
 	noindex = false,
 } = Astro.props;
+const year = new Date().getFullYear();
 ---
 <!doctype html>
 <html lang="id" data-view={view}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<meta name="color-scheme" content="light dark" />
-		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-		<meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)" />
+		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#913FE2" />
 		<meta name="description" content={description} />
 		{noindex && <meta name="robots" content="noindex" />}
 		<title>{title}</title>
@@ -36,14 +38,10 @@ const {
 		<!-- Koneksi ke API (fetch CORS) dan gambar (no-cors) memakai pool socket berbeda. -->
 		<link rel="preconnect" href={API_BASE} crossorigin />
 		<link rel="preconnect" href={API_BASE} />
-		<!-- Tema pilihan & jenis halaman diset sebelum cat pertama agar tidak berkedip. -->
+		<!-- Jenis halaman diset sebelum cat pertama agar CSS (mis. reader tanpa header) tidak berkedip. -->
 		<script is:inline>
 			(function () {
 				var d = document.documentElement;
-				try {
-					var t = localStorage.getItem('mr:theme');
-					if (t === 'dark' || t === 'light') d.setAttribute('data-theme', t);
-				} catch (e) {}
 				if (!d.getAttribute('data-view')) d.setAttribute('data-view', location.pathname.split('/')[1] || 'home');
 			})();
 		</script>
@@ -51,9 +49,20 @@ const {
 	<body>
 		<a class="skip" href="#main">Lewati ke konten</a>
 		<Nav />
-		<main id="main" class="wrap">
+		<main id="main">
+			<slot name="hero" />
 			<slot />
 		</main>
-		<TabBar />
+		<footer class="site-footer">
+			<div class="wrap footer-in">
+				<a class="footer-brand" href="/" aria-label="Panel, beranda"><Fragment set:html={PANEL_MARK} /><span>Panel</span></a>
+				<nav class="footer-links" aria-label="Tautan kaki">
+					<a href="/">Beranda</a>
+					<a href="/daftar/">Daftar</a>
+					<a href="/pustaka/">Pustaka</a>
+				</nav>
+				<p class="footer-copy">&copy; {year} Panel.</p>
+			</div>
+		</footer>
 	</body>
 </html>

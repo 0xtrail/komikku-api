@@ -53,6 +53,7 @@ import {
 } from './readerview';
 import { createImageLoader, warmImages } from './readerimg';
 import { showResumeToast, startResume, type ResumeHandle } from './readerresume';
+import { mountReaderChrome } from './readerui';
 
 const AUTONEXT_KEY = 'mr:reader:autonext';
 /** Garis baca: halaman yang melewatinya dianggap sedang dibaca. */
@@ -179,6 +180,7 @@ export function mountChapter(slug: string): void {
       state: 'ready',
       back: manga.slug,
       mangaTitle: s.ch.manga_title || i?.title || undefined,
+      cover: i?.thumbnail || undefined,
       current: listName(i?.chapter_list, s.slug),
       prev: steps.prev,
       next: steps.next,
@@ -189,7 +191,6 @@ export function mountChapter(slug: string): void {
   /* ---------------------------------------------------------------- navigasi */
 
   let stepLinks: { prev?: string; next?: string } = {};
-  let bar: HTMLElement | null = null;
   let shown = ''; // teks penunjuk halaman yang sedang tampil
   let slotState: SlotState | 'error' = 'idle';
   let slotNext: Step | undefined; // chapter setelah chapter terakhir yang dimuat
@@ -219,17 +220,15 @@ export function mountChapter(slug: string): void {
     el.querySelectorAll('[data-read-progress]').forEach((n) => (n.textContent = text));
   };
 
-  /** Judul tab, tautan keyboard, bar bawah, dan penunjuk halaman mengikuti chapter yang sedang dibaca. */
+  /** Judul tab, tautan keyboard, dan penunjuk halaman mengikuti chapter yang sedang dibaca. */
   const afterNav = (c: ReaderCtx): void => {
     setTitle(c.mangaTitle ? `${c.mangaTitle} — ${readerTitle(c)}` : readerTitle(c));
     stepLinks = {
       prev: c.prev ? chapterHref(c.prev.slug) : undefined,
       next: c.next ? chapterHref(c.next.slug) : undefined,
     };
-    bar = el.querySelector<HTMLElement>('.fixbar');
     shown = '';
     paintProgress();
-    syncBar();
   };
 
   /** Header + bar atas/bawah dari chapter yang sedang dibaca, lalu slot bawah. */
@@ -258,22 +257,6 @@ export function mountChapter(slug: string): void {
     applyNav();
     scheduleSave();
     measure();
-  }
-
-  /* Bar bawah: sembunyi saat scroll turun, muncul saat scroll naik / di awal chapter / (disembunyikan) di akhir halaman. */
-  let lastY = window.scrollY;
-  let scrollHidden = false;
-  function syncBar(): void {
-    if (!bar) return;
-    const y = window.scrollY;
-    const dy = y - lastY;
-    if (Math.abs(dy) >= 4) {
-      lastY = y; // akumulasi: scroll pelan tetap terdeteksi
-      scrollHidden = dy > 0;
-    }
-    if (y < 80) scrollHidden = false;
-    const atEnd = y + window.innerHeight >= document.documentElement.scrollHeight - 80; // nav akhir sudah terlihat
-    bar.classList.toggle('is-hidden', scrollHidden || atEnd);
   }
 
   /* ------------------------------------------------------------- pustaka */
@@ -536,7 +519,6 @@ export function mountChapter(slug: string): void {
     ticking = true;
     requestAnimationFrame(() => {
       ticking = false;
-      syncBar();
       measure();
     });
   };
@@ -576,10 +558,7 @@ export function mountChapter(slug: string): void {
     measure();
   });
 
-  // Fokus keyboard ke bar yang tersembunyi: tampilkan.
-  el.addEventListener('focusin', (e) => {
-    if (e.target instanceof Element && e.target.closest('.fixbar')) bar?.classList.remove('is-hidden');
-  });
+  mountReaderChrome(el); // bar atas/bawah: sembunyi saat gulir turun, tampil saat gulir naik atau diketuk
 
   // Pintasan keyboard: ← chapter sebelumnya, → berikutnya (dari chapter yang sedang dibaca).
   document.addEventListener('keydown', (e) => {

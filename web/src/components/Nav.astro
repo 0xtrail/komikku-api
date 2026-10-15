@@ -1,32 +1,40 @@
 ---
-// Header lengket ringkas: merek, navigasi utama (desktop), kolom cari kompak,
-// tombol tema. Navigasi utama ponsel ada di TabBar.astro.
-// Menu aktif & tombol tema dikelola di src/lib/site.ts; sub-menu Daftar di navmenu.ts;
+// Header lengket ungu: tombol menu (ponsel), logo, navigasi utama, kolom cari, tombol Pustaka.
+// Di bawah 768px navigasi utama menjadi panel di bawah bar (dibuka tombol menu) dan kolom cari menjadi
+// baris di bawah bar (dibuka ikon cari); keduanya digerakkan src/lib/header.ts.
+// Menu aktif ditandai src/lib/site.ts; sub-menu Daftar di navmenu.ts (disclosure, juga di dalam panel ponsel);
 // autocomplete (kotak #suggest) di suggest.ts, yang juga memasang atribut ARIA combobox.
-// Lencana [data-bm-count] di tautan Pustaka diisi bookmarks.ts (tersembunyi bila 0).
+// Lencana [data-bm-count] di tombol Pustaka diisi bookmarks.ts (tersembunyi bila 0).
+import { ICON_BOOKMARK, ICON_CHEV_DOWN, ICON_CLOSE, ICON_MENU, ICON_SEARCH, PANEL_MARK } from '../lib/icons';
 ---
 <header class="site-header">
 	<div class="wrap bar">
+		<button
+			class="nav-burger"
+			type="button"
+			aria-label="Menu"
+			aria-expanded="false"
+			aria-controls="primary-nav"
+			data-nav-toggle
+		>
+			<span class="i-open"><Fragment set:html={ICON_MENU} /></span>
+			<span class="i-close"><Fragment set:html={ICON_CLOSE} /></span>
+		</button>
+
 		<a class="brand" href="/" aria-label="Panel, beranda">
-			<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-				<rect x="2" y="2" width="9" height="20" rx="2.5" fill="currentColor" />
-				<rect x="13" y="2" width="9" height="9" rx="2.5" fill="currentColor" />
-				<rect x="13" y="13" width="9" height="9" rx="2.5" fill="currentColor" opacity=".55" />
-			</svg>
-			<span>Panel</span>
+			<span class="brand-mark"><Fragment set:html={PANEL_MARK} /></span>
+			<span class="brand-name">Panel</span>
 		</a>
 
-		<nav class="primary-nav" aria-label="Utama">
+		<nav class="primary-nav" id="primary-nav" aria-label="Utama">
 			<a href="/" data-nav="home">Beranda</a>
 			<div class="nav-drop" data-menu>
 				<button type="button" class="nav-trigger" data-nav="daftar" data-menu-toggle aria-expanded="false" aria-controls="menu-daftar">
 					Daftar
-					<svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
-					</svg>
+					<Fragment set:html={ICON_CHEV_DOWN} />
 				</button>
 				<ul class="nav-menu" id="menu-daftar" data-menu-list role="list" hidden>
-					<li><a href="/daftar/" data-tipe="">Semua judul</a></li>
+					<li><a href="/daftar/" data-tipe="">Semua</a></li>
 					<li><a href="/daftar/?tipe=manga" data-tipe="manga">Manga</a></li>
 					<li><a href="/daftar/?tipe=manhwa" data-tipe="manhwa">Manhwa</a></li>
 					<li><a href="/daftar/?tipe=manhua" data-tipe="manhua">Manhua</a></li>
@@ -35,10 +43,20 @@
 			<a href="/populer/" data-nav="populer">Populer</a>
 			<a href="/terbaru/" data-nav="terbaru">Terbaru</a>
 			<a href="/#genre" data-nav="genre">Genre</a>
-			<a href="/pustaka/" data-nav="pustaka">Pustaka<span class="nav-badge" data-bm-count hidden></span></a>
 		</nav>
 
-		<form class="search" action="/search/" method="get" role="search">
+		<button
+			class="search-toggle"
+			type="button"
+			aria-label="Cari"
+			aria-expanded="false"
+			aria-controls="site-search"
+			data-search-toggle
+		>
+			<Fragment set:html={ICON_SEARCH} />
+		</button>
+
+		<form class="search" id="site-search" action="/search/" method="get" role="search">
 			<div class="search-field">
 				<input
 					id="q"
@@ -50,29 +68,18 @@
 					enterkeyhint="search"
 				/>
 				<button type="submit" aria-label="Cari">
-					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
-						<path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-					</svg>
+					<Fragment set:html={ICON_SEARCH} />
 				</button>
+				<kbd class="search-kbd" aria-hidden="true" data-search-kbd>⌘K</kbd>
 			</div>
 			<div class="suggest" id="suggest" role="listbox" aria-label="Saran pencarian" hidden></div>
 			<p class="sr-only" id="suggest-live" role="status" aria-live="polite"></p>
 		</form>
 
-		<button class="theme-toggle" type="button" data-theme-toggle aria-label="Mode gelap" aria-pressed="false">
-			<svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-				<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor" />
-			</svg>
-			<svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-				<circle cx="12" cy="12" r="4.2" fill="currentColor" />
-				<path
-					d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-				/>
-			</svg>
-		</button>
+		<a class="lib-btn" href="/pustaka/" data-nav="pustaka">
+			<Fragment set:html={ICON_BOOKMARK} />
+			<span class="lib-btn-lbl">Pustaka</span>
+			<span class="nav-badge" data-bm-count hidden></span>
+		</a>
 	</div>
 </header>

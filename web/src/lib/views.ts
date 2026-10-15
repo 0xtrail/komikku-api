@@ -13,6 +13,17 @@ import { slugOf, chapterSlug, type Manga, type Genre, type MangaInfo, type ListT
 import { mangaHref, chapterHref, genreHref, genreSlug, daftarHref, resumeHref, type LibTab } from './routes.ts';
 // Hanya TIPE (terhapus saat build): views tidak boleh menyentuh storage. Data pustaka dioper sebagai parameter.
 import type { Bookmark, Progress } from './library';
+import {
+  ICON_BOOKMARK,
+  ICON_CHECK,
+  ICON_CHEV_DOWN,
+  ICON_CLOCK,
+  ICON_EYE,
+  ICON_PLUS_CIRCLE,
+  ICON_SEARCH,
+  ICON_SORT,
+  ICON_X,
+} from './icons.ts';
 
 export const esc = (v: unknown): string =>
   String(v ?? '').replace(/[&<>"']/g, (c) =>
@@ -32,25 +43,27 @@ export const SR_LOADING = '<span class="sr-only">Sedang memuat konten</span>';
 
 /* ------------------------------------------------------------------ cards */
 
-const typeKey = (t?: string): string => {
+export const typeKey = (t?: string): string => {
   const k = (t ?? '').toLowerCase().replace(/[^a-z]/g, '');
   return k === 'manga' || k === 'manhwa' || k === 'manhua' ? k : 'other';
 };
+
+/** Chip jenis (Manga/Manhwa/Manhua) dengan titik warna; di sampul ia melayang di pojok kanan atas (CSS). */
+export const typeBadgeHtml = (t?: string): string =>
+  t ? `<span class="badge badge-${typeKey(t)}"><i class="dot" aria-hidden="true"></i>${esc(t)}</span>` : '';
 
 /**
  * Kartu manga. `rank` (1-based) menambah angka peringkat besar di sampul —
  * dipakai baris Populer.
  */
 export function cardHtml(m: Manga, rank?: number): string {
-  const badge = m.type
-    ? `<span class="badge badge-${typeKey(m.type)}">${esc(m.type)}</span>`
-    : '';
+  const badge = typeBadgeHtml(m.type);
   const rankEl = rank ? `<span class="rank" aria-hidden="true">${rank}</span>` : '';
   return (
     `<a class="card" href="${esc(mangaHref(slugOf(m.endpoint)))}">` +
     `<span class="cover">` +
     (m.image
-      ? `<img src="${esc(m.image)}" alt="Sampul ${esc(m.title)}" width="200" height="300" loading="lazy" decoding="async">`
+      ? `<img src="${esc(m.image)}" alt="Sampul ${esc(m.title)}" width="300" height="400" loading="lazy" decoding="async">`
       : '') +
     `${badge}${rankEl}</span>` +
     `<h3 class="card-title">${esc(m.title)}</h3>` +
@@ -67,25 +80,31 @@ const bmData = (slug: string, title: string, cover: string, type?: string): stri
 
 /**
  * Tombol bookmark kartu. SAUDARA dari `<a class="card">` di dalam `<li>` (tombol di dalam tautan
- * tidak valid dan menekannya akan menavigasi); CSS menumpuknya di pojok kanan atas sampul.
- * Nama aksesibel tetap "Simpan <judul>"; keadaan lewat `aria-pressed` (disetel `syncBookmarkButtons`).
+ * tidak valid dan menekannya akan menavigasi); CSS memasangnya selebar kartu di dasar `li.has-bm`.
+ * Nama aksesibel "Bookmark <judul>" memuat teks yang tampil ("Bookmark"/"Tersimpan" di `.bm-label`);
+ * keadaan lewat `aria-pressed` (disetel `syncBookmarkButtons`).
  */
 export const bookmarkButtonHtml = (m: Manga): string =>
-  `<button type="button" class="card-bm" ${bmData(slugOf(m.endpoint), m.title, m.image, m.type)} aria-pressed="false" aria-label="Simpan ${esc(m.title)}">${ICON_BOOKMARK}<span class="bm-label">Simpan</span></button>`;
+  `<button type="button" class="card-bm" ${bmData(slugOf(m.endpoint), m.title, m.image, m.type)} aria-pressed="false" aria-label="Bookmark ${esc(m.title)}">${ICON_BOOKMARK}<span class="bm-label">Bookmark</span></button>`;
 
 /** Satu item daftar: kartu + tombol bookmark. Dipakai grid, baris Populer, dan feed. */
 export const cardItemHtml = (m: Manga, rank?: number): string =>
   `<li class="has-bm">${cardHtml(m, rank)}${bookmarkButtonHtml(m)}</li>`;
 
-const EMPTY = '<p class="empty">Belum ada data untuk ditampilkan.</p>';
+export const EMPTY = '<p class="empty">Belum ada data untuk ditampilkan.</p>';
 
-/** Grid padat: 2 kolom di ponsel, sampai 6 di desktop (CSS). */
+/** Grid kartu: 2 kolom di ponsel, sampai 6 di desktop (CSS). */
 export const gridHtml = (list: Manga[]): string =>
   list.length ? `<ul class="grid" role="list">${list.map((m) => cardItemHtml(m)).join('')}</ul>` : EMPTY;
 
-/** Baris geser horizontal dengan angka peringkat. */
-export const railHtml = (list: Manga[]): string =>
-  list.length ? `<ol class="rail" role="list">${list.map((m, i) => cardItemHtml(m, i + 1)).join('')}</ol>` : EMPTY;
+/** Baris geser horizontal; `ranked` menambah angka peringkat besar di sampul. */
+export const railHtml = (list: Manga[], ranked = true): string =>
+  list.length
+    ? `<ol class="rail" role="list">${list.map((m, i) => cardItemHtml(m, ranked ? i + 1 : undefined)).join('')}</ol>`
+    : EMPTY;
+
+/** Baris geser panel Rekomendasi di beranda (tanpa peringkat: peringkat ada di sidebar). */
+export const recoRailHtml = (list: Manga[]): string => railHtml(list, false);
 
 /** Genre yang paling sering dicari: tampil dulu; sisanya di balik tombol "Semua genre". */
 const FEATURED_GENRES = [
@@ -123,7 +142,7 @@ export function genreCloud(list: Genre[]): string {
 /* -------------------------------------------------------------- skeletons */
 
 const skelCard =
-  '<li><span class="sk-card"><span class="sk sk-cover"></span><span class="sk sk-line"></span><span class="sk sk-line s"></span></span></li>';
+  '<li><span class="sk-card"><span class="sk sk-cover"></span><span class="sk sk-line"></span><span class="sk sk-btn-block"></span></span></li>';
 
 export const skelGrid = (n = 10): string =>
   `<ul class="grid" role="list" aria-hidden="true">${skelCard.repeat(n)}</ul>`;
@@ -134,20 +153,21 @@ export const skelRail = (n = 8): string =>
 export const skelChips = (n = 18): string =>
   `<ul class="chips" role="list" aria-hidden="true">${'<li><span class="sk sk-chip"></span></li>'.repeat(n)}</ul>`;
 
-/** Kerangka halaman daftar: judul + grid. */
+/** Kerangka halaman daftar: panel judul + grid. */
 export const skelListing = (): string =>
-  `<div class="page-head" aria-hidden="true"><span class="sk sk-title"></span></div>${skelGrid(10)}${SR_LOADING}`;
+  `<div class="page-head filter-panel" aria-hidden="true"><span class="sk sk-title"></span></div>${skelGrid(10)}${SR_LOADING}`;
 
 export const skelDetail = (): string =>
-  `<div class="detail" aria-hidden="true">
-    <div class="detail-cover"><span class="sk sk-cover"></span></div>
-    <div class="detail-main">
-      <span class="sk sk-title"></span>
-      <span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line s"></span>
-    </div>
-    <div class="cta"><span class="sk sk-btn"></span><span class="sk sk-btn"></span></div>
-  </div>
-  <div class="chapter-box" aria-hidden="true">${'<span class="sk sk-row"></span>'.repeat(6)}</div>${SR_LOADING}`;
+  `<div class="detail-page" aria-hidden="true">
+    <article class="detail">
+      <div class="detail-side"><div class="detail-cover"><span class="sk sk-cover"></span></div><span class="sk sk-block"></span></div>
+      <div class="detail-main">
+        <div class="title-panel"><span class="sk sk-title"></span><span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line s"></span></div>
+        <div class="cta"><span class="sk sk-btn-lg"></span><span class="sk sk-btn-lg"></span><span class="sk sk-btn-lg"></span></div>
+        <div class="chapter-box panel">${'<span class="sk sk-row"></span>'.repeat(6)}</div>
+      </div>
+    </article>
+  </div>${SR_LOADING}`;
 
 export const skelReader = (): string =>
   `<div class="reader" aria-hidden="true">
@@ -168,15 +188,11 @@ export interface DetailLib {
   /** Slug chapter (huruf kecil) yang sudah dibaca. */
   read: ReadonlySet<string>;
   synopsisOpen?: boolean;
+  /** Daftar chapter dari yang terlama (default: terbaru dulu, urutan API). */
+  oldestFirst?: boolean;
 }
 
-const ICON_BOOKMARK =
-  '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 3.5h11a1 1 0 0 1 1 1V20.5l-6.5-4.4-6.5 4.4V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
-
-const ICON_CHECK =
-  '<svg class="ch-check" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-/** Sinopsis lebih panjang dari ini dipangkas (~4 baris) dengan tombol "Selengkapnya". */
+/** Sinopsis lebih panjang dari ini dipangkas (~3 baris) dengan tombol "Selengkapnya". */
 const SYNOPSIS_LONG = 280;
 
 /** Sinopsis API: paragraf dipisah baris kosong. Kosong/tidak ada = bagian disembunyikan. */
@@ -189,47 +205,58 @@ export function synopsisHtml(text: string | undefined, open = false): string {
   if (!paras.length) return '';
   const long = paras.join(' ').length > SYNOPSIS_LONG;
   return `<section class="synopsis${long && !open ? ' is-clamped' : ''}" aria-labelledby="h-syn" data-synopsis>
-      <h2 id="h-syn"><i class="mark" aria-hidden="true"></i>Sinopsis</h2>
+      <h2 id="h-syn" class="sr-only">Sinopsis</h2>
       <div class="syn-body" id="syn-body">${paras.map((p) => `<p>${esc(p)}</p>`).join('')}</div>
       ${
         long
-          ? `<button type="button" class="btn syn-toggle" data-syn-toggle aria-expanded="${open}" aria-controls="syn-body">${open ? 'Ringkas' : 'Selengkapnya'}</button>`
+          ? `<button type="button" class="syn-toggle" data-syn-toggle aria-expanded="${open}" aria-controls="syn-body">${open ? 'Ringkas' : 'Selengkapnya'}</button>`
           : ''
       }
     </section>`;
 }
+
+/** Teks tombol urutan chapter: urutan yang sedang tampil. */
+export const sortLabel = (oldestFirst: boolean): string => (oldestFirst ? 'Terlama' : 'Terbaru');
+
+export const sortAriaLabel = (oldestFirst: boolean): string =>
+  `Urutan chapter: ${sortLabel(oldestFirst).toLowerCase()} dulu. Tekan untuk membalik`;
 
 export function detailHtml(info: MangaInfo, lib: DetailLib): string {
   const chapters = info.chapter_list ?? [];
   const latest = chapters[0];
   const first = chapters[chapters.length - 1];
   const p = lib.progress;
+  const oldest = lib.oldestFirst === true;
 
-  const row = (label: string, value?: string) =>
-    `<tr><th scope="row">${label}</th><td>${esc(value || '-')}</td></tr>`;
+  const stat = (tone: string, label: string, value: string) =>
+    `<div class="stat"><dt>${label}</dt><dd class="stat-${tone}">${esc(value || '-')}</dd></div>`;
+  const fact = (label: string, value: string, dot = false) =>
+    `<div class="fact"><dt>${label}</dt><dd>${dot ? '<i class="dot" aria-hidden="true"></i>' : ''}<span class="fact-val">${esc(value || '-')}</span></dd></div>`;
 
   const genres = (info.genre ?? [])
     .map((g) => ({ g, slug: genreSlug(g) }))
     .filter((x) => x.slug)
-    .map((x) => `<li><a class="chip" href="${esc(genreHref(x.slug))}">${esc(x.g)}</a></li>`)
+    .map((x) => `<li><a class="chip chip-sm" href="${esc(genreHref(x.slug))}">${esc(x.g)}</a></li>`)
     .join('');
 
+  const firstHref = chapters.length ? esc(chapterHref(chapterSlug(first.endpoint))) : '';
   const resume = p
-    ? `<a class="btn btn-primary btn-resume" data-resume href="${esc(resumeHref(p.chapter.slug, p.page))}"><span class="lbl">Lanjutkan · ${esc(p.chapter.name)}</span>${
+    ? `<a class="btn btn-lg btn-resume" data-resume href="${esc(resumeHref(p.chapter.slug, p.page))}">${ICON_EYE}<span class="lbl">Lanjutkan · ${esc(p.chapter.name)}</span>${
         p.page > 0 ? `<span class="btn-pg">hal. ${p.page + 1}</span>` : ''
       }</a>`
     : '';
-  const bookmark = `<button type="button" class="btn btn-bookmark" data-bookmark ${bmData(lib.slug, info.title, info.thumbnail, info.type)} aria-pressed="${lib.bookmarked}">${ICON_BOOKMARK}<span class="bm-label">${
-    lib.bookmarked ? 'Tersimpan' : 'Simpan'
+  const bookmark = `<button type="button" class="btn btn-lg btn-bookmark" data-bookmark ${bmData(lib.slug, info.title, info.thumbnail, info.type)} aria-pressed="${lib.bookmarked}">${ICON_BOOKMARK}<span class="bm-label">${
+    lib.bookmarked ? 'Tersimpan' : 'Bookmark'
   }</span></button>`;
-  const read = chapters.length
-    ? `${resume || `<a class="btn btn-primary" href="${esc(chapterHref(chapterSlug(first.endpoint)))}">Baca Chapter Awal</a>`}
-       ${resume ? `<a class="btn" href="${esc(chapterHref(chapterSlug(first.endpoint)))}">Baca dari awal</a>` : ''}
-       <a class="btn" href="${esc(chapterHref(chapterSlug(latest.endpoint)))}">Chapter Terbaru</a>`
-    : `${resume}<p class="muted">Belum ada chapter yang tersedia.</p>`;
+  const cta = chapters.length
+    ? `${bookmark}${resume || `<a class="btn btn-lg btn-first" href="${firstHref}">${ICON_EYE}<span class="lbl">Baca Chapter Awal</span></a>`}` +
+      `<a class="btn btn-lg btn-latest" href="${esc(chapterHref(chapterSlug(latest.endpoint)))}">${ICON_CLOCK}<span class="lbl">Chapter Terbaru</span></a>` +
+      (resume ? `<a class="cta-more" href="${firstHref}">Baca dari awal</a>` : '')
+    : `${bookmark}${resume}<p class="muted cta-none">Belum ada chapter yang tersedia.</p>`;
 
   const lastRead = p ? p.chapter.slug.toLowerCase() : '';
-  const list = chapters
+  const rows = oldest ? [...chapters].reverse() : chapters;
+  const list = rows
     .map((c) => {
       const slug = chapterSlug(c.endpoint);
       const key = slug.toLowerCase();
@@ -242,33 +269,43 @@ export function detailHtml(info: MangaInfo, lib: DetailLib): string {
     .join('');
 
   return `
+    <div class="detail-page">
+    ${info.thumbnail ? `<div class="detail-bg" aria-hidden="true"><img src="${esc(info.thumbnail)}" alt="" width="240" height="360" decoding="async"></div>` : ''}
     <article class="detail">
-      <div class="detail-cover">
-        <span class="cover"><img src="${esc(info.thumbnail)}" alt="Sampul ${esc(info.title)}" width="240" height="360" decoding="async" fetchpriority="high"></span>
-      </div>
-      <div class="detail-main">
-        <h1>${esc(info.title)}</h1>
-        <table class="meta"><tbody>
-          ${row('Tipe', info.type)}${row('Pengarang', info.author)}${row('Status', info.status)}${row('Rating', info.rating)}
-        </tbody></table>
+      <div class="detail-side">
+        <div class="detail-cover">
+          <span class="cover"><img src="${esc(info.thumbnail)}" alt="Sampul ${esc(info.title)}" width="300" height="400" decoding="async" fetchpriority="high"></span>
+        </div>
+        <dl class="stats">${stat('gold', 'Rating', info.rating ?? '')}${stat('green', 'Chapter', String(chapters.length))}${stat('blue', 'Tipe', info.type ?? '')}</dl>
+        <dl class="facts">${fact('Status', info.status ?? '', true)}${fact('Pengarang', info.author ?? '')}</dl>
         ${genres ? `<ul class="chips" role="list" aria-label="Genre">${genres}</ul>` : ''}
       </div>
-      <div class="cta">${read}${bookmark}</div>
-    </article>
-    ${synopsisHtml(info.synopsis, lib.synopsisOpen)}
-    <section class="chapter-box" aria-labelledby="h-chapters">
-      <div class="chapter-head">
-        <h2 id="h-chapters"><i class="mark" aria-hidden="true"></i>Daftar Chapter</h2>
-        <span class="muted count" data-count aria-live="polite">${chapters.length} chapter</span>
-        ${
-          chapters.length > 8
-            ? '<input class="filter" type="search" data-filter placeholder="Cari chapter, mis. 12" aria-label="Cari chapter" autocomplete="off">'
-            : ''
-        }
+      <div class="detail-main">
+        <div class="title-panel">
+          <h1>${esc(info.title)}</h1>
+          ${synopsisHtml(info.synopsis, lib.synopsisOpen)}
+        </div>
+        <div class="cta">${cta}</div>
+        <section class="chapter-box panel" aria-labelledby="h-chapters">
+          <div class="chapter-head">
+            <h2 id="h-chapters"><span data-count aria-live="polite">${chapters.length} Chapter</span></h2>
+            ${
+              chapters.length > 1
+                ? `<button type="button" class="btn btn-sm sort-btn" data-sort aria-label="${sortAriaLabel(oldest)}">${ICON_SORT}<span class="sort-lbl">${sortLabel(oldest)}</span></button>`
+                : ''
+            }
+          </div>
+          ${
+            chapters.length > 8
+              ? `<div class="filter-wrap"><input class="filter" type="search" data-filter placeholder="Cari chapter, mis. 12" aria-label="Cari chapter" autocomplete="off">${ICON_SEARCH}</div>`
+              : ''
+          }
+          <ul class="chapter-list" role="list" aria-label="Daftar chapter">${list || '<li class="muted pad">Belum ada chapter.</li>'}</ul>
+          <p class="muted pad" data-empty hidden>Tidak ada chapter yang cocok dengan pencarian.</p>
+        </section>
       </div>
-      <ul class="chapter-list" role="list" aria-label="Daftar chapter">${list || '<li class="muted pad">Belum ada chapter.</li>'}</ul>
-      <p class="muted pad" data-empty hidden>Tidak ada chapter yang cocok dengan pencarian.</p>
-    </section>`;
+    </article>
+    </div>`;
 }
 
 /** "Chapter 12" -> "Ch. 12" (untuk ruang sempit: bar bawah reader, kartu lanjut baca). */
@@ -288,8 +325,33 @@ export const LIST_TABS: ReadonlyArray<{ tipe: ListTipe; label: string; title: st
 export const daftarTabsHtml = (active: ListTipe): string =>
   `<nav class="seg" aria-label="Jenis komik">${LIST_TABS.map(
     (t) =>
-      `<a class="seg-item" href="${esc(daftarHref(t.tipe))}" data-tipe="${t.tipe}"${t.tipe === active ? ' aria-current="page"' : ''}>${t.label}</a>`,
+      `<a class="seg-item" href="${esc(daftarHref(t.tipe))}" data-tipe="${t.tipe}"${t.tipe === active ? ' aria-current="page"' : ''}>${ICON_PLUS_CIRCLE}${t.label}</a>`,
   ).join('')}</nav>`;
+
+/**
+ * Tombol "Genre" + popover daftar genre (isi dimuat genrepop.ts saat pertama dibuka).
+ * Tombol memegang `aria-expanded`; panel `hidden` sampai dibuka.
+ */
+export const genrePopHtml = (): string =>
+  `<div class="genre-pop" data-genre-pop>` +
+  `<button type="button" class="seg-item seg-genre" data-genre-toggle aria-expanded="false" aria-controls="genre-pop-panel">${ICON_PLUS_CIRCLE}Genre${ICON_CHEV_DOWN}</button>` +
+  `<div class="pop-panel" id="genre-pop-panel" data-genre-panel role="region" aria-label="Pilih genre" hidden><div data-genre-body></div></div>` +
+  `</div>`;
+
+/** Baris filter Daftar Komik: tab jenis + tombol Genre. */
+export const daftarFilterHtml = (active: ListTipe): string =>
+  `<div class="filter-bar">${daftarTabsHtml(active)}${genrePopHtml()}</div>`;
+
+/**
+ * Kepala halaman bergaya panel filter: judul (`<h1>`), pil label/jumlah, baris keterangan, dan filter.
+ * `title`/`pill` di-escape di sini; `sub` dan `filters` adalah HTML tepercaya dari pemanggil
+ * (yang sendiri meng-escape teks API di dalamnya).
+ */
+export function pageHeadHtml(o: { title: string; pill?: string; sub?: string; filters?: string }): string {
+  return `<header class="page-head filter-panel"><div class="ph-row"><h1>${esc(o.title)}</h1>${
+    o.pill ? `<span class="pill">${esc(o.pill)}</span>` : ''
+  }</div>${o.sub ?? ''}${o.filters ?? ''}</header>`;
+}
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -334,19 +396,15 @@ export function relativeTime(ts: number, now: number = Date.now()): string {
 const coverImg = (src: string, w: number, h: number): string =>
   src ? `<img src="${esc(src)}" alt="" width="${w}" height="${h}" loading="lazy" decoding="async">` : '';
 
-const ICON_X =
-  '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
-
 /* ------------------------------------------------- lanjut membaca (beranda) */
 
 /** Kartu lanjut baca: sampul, judul, "Ch. X · hal. N"; langsung ke posisi terakhir. */
 function resumeCardHtml(p: Progress): string {
-  const badge = p.type ? `<span class="badge badge-${typeKey(p.type)}">${esc(p.type)}</span>` : '';
   return (
     `<a class="card" href="${esc(resumeHref(p.chapter.slug, p.page))}">` +
     `<span class="cover">${
-      p.cover ? `<img src="${esc(p.cover)}" alt="Sampul ${esc(p.title)}" width="200" height="300" loading="lazy" decoding="async">` : ''
-    }${badge}</span>` +
+      p.cover ? `<img src="${esc(p.cover)}" alt="Sampul ${esc(p.title)}" width="300" height="400" loading="lazy" decoding="async">` : ''
+    }${typeBadgeHtml(p.type)}</span>` +
     `<h3 class="card-title">${esc(p.title)}</h3>` +
     `<p class="card-sub">${esc(shortName(p.chapter.name))} · hal. ${p.page + 1}</p>` +
     `</a>`
@@ -354,15 +412,15 @@ function resumeCardHtml(p: Progress): string {
 }
 
 export const resumeRailHtml = (list: readonly Progress[]): string =>
-  `<ol class="rail" role="list">${list.map((p) => `<li>${resumeCardHtml(p)}</li>`).join('')}</ol>`;
+  `<ol class="rail" role="list">${list.map((p) => `<li class="card-li">${resumeCardHtml(p)}</li>`).join('')}</ol>`;
 
 /* ---------------------------------------------------------------- pustaka */
 
 /** Kerangka halaman Pustaka: dibuat sekali. Isi tab ada di `[data-lib-view]`, yang digambar ulang. */
 export const libraryShellHtml = (): string => `
-  <div class="page-head"><h1>Pustaka</h1><p class="muted">Tersimpan di browser ini.</p></div>
+  <header class="page-head filter-panel"><div class="ph-row"><h1>Pustaka</h1><span class="pill" data-lib-count hidden></span></div><p class="ph-sub">Tersimpan di browser ini.</p></header>
   <div data-lib-view></div>
-  <section class="lib-tools" aria-labelledby="h-tools">
+  <section class="lib-tools panel" aria-labelledby="h-tools">
     <h2 id="h-tools" class="sr-only">Cadangan data</h2>
     <p class="muted">Pindahkan pustaka ke perangkat lain dengan ekspor lalu impor berkasnya di sana.</p>
     <div class="lib-tools-row">
@@ -381,7 +439,7 @@ function historyRowHtml(p: Progress, now: number): string {
   const where = `${esc(p.chapter.name)} · hal. ${p.page + 1}${p.pageCount > 0 ? ` dari ${Math.max(p.pageCount, p.page + 1)}` : ''}`;
   const manga = esc(mangaHref(p.slug));
   return `<li class="lib-row">
-    <a class="lib-cover" href="${manga}" tabindex="-1" aria-hidden="true"><span class="cover">${coverImg(p.cover, 56, 84)}</span></a>
+    <a class="lib-cover" href="${manga}" tabindex="-1" aria-hidden="true"><span class="cover">${coverImg(p.cover, 60, 80)}</span></a>
     <div class="lib-main">
       <a class="lib-title" href="${manga}">${esc(p.title)}</a>
       <p class="lib-meta">${where}</p>
@@ -403,13 +461,13 @@ function historyPanelHtml(list: readonly Progress[], now: number): string {
 }
 
 function bookmarkPanelHtml(list: readonly Bookmark[]): string {
-  if (!list.length) return libEmpty('Belum ada bookmark. Tekan Simpan di halaman sebuah judul untuk menaruhnya di sini.');
+  if (!list.length) return libEmpty('Belum ada bookmark. Tekan Bookmark di halaman sebuah judul untuk menaruhnya di sini.');
   // Tombol hapus saudara dari tautan kartu (bukan di dalamnya): menekannya tidak membuka judul.
   return `<ul class="grid" role="list">${list
     .map(
       (b) =>
         `<li class="bm">${cardHtml({ title: b.title, image: b.cover, type: b.type, endpoint: `/manga/${b.slug}/` })}` +
-        `<button type="button" class="bm-remove" data-remove-bookmark data-slug="${esc(b.slug)}" aria-label="Hapus ${esc(b.title)} dari bookmark"><span aria-hidden="true">${ICON_X}</span></button></li>`,
+        `<button type="button" class="bm-remove" data-remove-bookmark data-slug="${esc(b.slug)}" aria-label="Hapus ${esc(b.title)} dari bookmark">${ICON_X}<span>Hapus</span></button></li>`,
     )
     .join('')}</ul>`;
 }

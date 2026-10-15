@@ -34,20 +34,19 @@ import { mountResumeRail } from './pustaka';
 import { syncBookmarkButtons } from './bookmarks';
 import { showError, showNotFoundPage, whenOnline } from './errorstate';
 import { errorStateHtml } from './errorview';
+import { mountGenrePop } from './genrepop';
+import { HOME_VIEWS, type HomeKey } from './homeview';
 import {
   LIST_TABS,
   SR_LOADING,
   cardItemHtml,
-  daftarTabsHtml,
+  daftarFilterHtml,
   esc,
-  genreCloud,
   gridHtml,
-  railHtml,
+  pageHeadHtml,
   sig,
-  skelChips,
   skelGrid,
   skelListing,
-  skelRail,
 } from './views';
 
 export interface LoadOpts<T> {
@@ -105,7 +104,7 @@ export function mountSearch(q: string): void {
   setTitle(q ? `Cari: ${q}` : 'Cari manga');
   if (!q) {
     el.setAttribute('aria-busy', 'false');
-    el.innerHTML = `<div class="page-head"><h1>Cari manga</h1></div>
+    el.innerHTML = `${pageHeadHtml({ title: 'Cari manga' })}
       <p class="empty">Ketik judul di kolom pencarian di atas untuk mulai mencari.</p>`;
     return;
   }
@@ -117,11 +116,12 @@ export function mountSearch(q: string): void {
         if (e instanceof ApiError && e.code === 404) return [] as Manga[];
         throw e;
       }),
-    skeleton: `<div class="page-head" aria-hidden="true"><span class="sk sk-title"></span></div>${skelGrid(12)}${SR_LOADING}`,
+    skeleton: `<div class="page-head filter-panel" aria-hidden="true"><span class="sk sk-title"></span></div>${skelGrid(12)}${SR_LOADING}`,
     render: (results) => {
-      el.innerHTML = `<div class="page-head"><h1>Hasil untuk “${esc(q)}”</h1>${
-        results.length ? `<p class="muted">${results.length} judul ditemukan</p>` : ''
-      }</div>${
+      el.innerHTML = `${pageHeadHtml({
+        title: `Hasil pencarian: ${q}`,
+        pill: results.length ? `${results.length} judul` : undefined,
+      })}${
         results.length
           ? gridHtml(results)
           : `<p class="empty">Tidak ada hasil untuk “${esc(q)}”. Coba kata kunci lain.</p>`
@@ -328,29 +328,40 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
 
   let pathFor: (p: number) => string;
   let knownTitle: string | undefined;
-  let title: string;
+  let title: string; // judul tab dokumen
+  let heading: string; // <h1> panel kepala
+  let pill: string; // label di pil kepala (tidak memalsukan jumlah: API tidak memberi total)
   let hrefFor: (p: number) => string;
   let pageSize = PAGE_SIZE;
-  let tabs = ''; // tab jenis (Daftar Komik): statis, jadi ikut tampil di skeleton
+  let filters = ''; // filter jenis + Genre (Daftar Komik): statis, jadi ikut tampil di skeleton
   if (route.kind === 'genre') {
     pathFor = (p) => paths.byGenre(route.slug, p);
     // Judul asli dari daftar genre bila sudah ada di cache; kalau belum, rapikan slug-nya.
     knownTitle = peek<Genre[]>(paths.genres())?.find((g) => chapterSlug(g.endpoint) === route.slug)?.title;
-    title = `Genre: ${knownTitle ?? prettySlug(route.slug)}`;
+    heading = knownTitle ?? prettySlug(route.slug);
+    title = `Genre: ${heading}`;
+    pill = 'Genre';
     hrefFor = (p) => genreHref(route.slug, p);
   } else if (route.kind === 'list') {
+    const tab = LIST_TABS.find((t) => t.tipe === route.tipe);
     pathFor = (p) => paths.list(route.tipe, p);
-    title = LIST_TABS.find((t) => t.tipe === route.tipe)?.title ?? 'Daftar Komik';
+    title = heading = tab?.title ?? 'Daftar Komik';
+    pill = route.tipe ? (tab?.label ?? '') : 'Semua jenis';
     hrefFor = (p) => daftarHref(route.tipe, p);
     pageSize = LIST_PAGE_SIZE;
-    tabs = daftarTabsHtml(route.tipe);
+    filters = daftarFilterHtml(route.tipe);
+    mountGenrePop(el);
   } else if (route.kind === 'popular') {
     pathFor = paths.popular;
     title = 'Manga Populer';
+    heading = 'Populer';
+    pill = 'Peringkat';
     hrefFor = (p) => listHref('populer', p);
   } else {
     pathFor = paths.newest;
     title = 'Rilis Terbaru';
+    heading = 'Terbaru';
+    pill = 'Rilis baru';
     hrefFor = (p) => listHref('terbaru', p);
   }
   const path = pathFor(page);
@@ -368,8 +379,8 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
         if (e instanceof ApiError && e.code === 404 && page > 1) return [] as Manga[];
         throw e;
       }),
-    skeleton: tabs
-      ? `<div class="page-head" aria-hidden="true"><h1>${esc(title)}</h1></div>${tabs}${skelGrid(10)}${SR_LOADING}`
+    skeleton: filters
+      ? `${pageHeadHtml({ title: heading, pill, filters })}${skelGrid(10)}${SR_LOADING}`
       : skelListing(),
     render: (list) => {
       // Validasi ulang di latar belakang memanggil render lagi. Bila pengguna sudah menambah halaman,
@@ -378,11 +389,15 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
       feed?.stop();
       feed = undefined;
 
-      const head = `<div class="page-head"><h1>${esc(title)}</h1>${
-        page > 1
-          ? `<p class="muted">Mulai dari halaman ${page} · <a href="${esc(hrefFor(page - 1))}">halaman sebelumnya</a></p>`
-          : ''
-      }</div>${tabs}`;
+      const head = pageHeadHtml({
+        title: heading,
+        pill,
+        sub:
+          page > 1
+            ? `<p class="ph-sub">Mulai dari halaman ${page} · <a href="${esc(hrefFor(page - 1))}">halaman sebelumnya</a></p>`
+            : '',
+        filters,
+      });
       el.innerHTML = list.length
         ? `${head}${gridHtml(list)}<div class="feed-status" aria-live="polite"></div>`
         : `${head}<p class="empty">Tidak ada data lagi di halaman ini.</p>`;
@@ -410,7 +425,7 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
             const g = all.find((x) => chapterSlug(x.endpoint) === route.slug);
             const h1 = el.querySelector('h1');
             if (g && h1) {
-              h1.textContent = `Genre: ${g.title}`;
+              h1.textContent = g.title;
               setTitle(page > 1 ? `Genre: ${g.title} (halaman ${page})` : `Genre: ${g.title}`);
             }
           })
@@ -422,37 +437,38 @@ export function mountListing(route: Extract<Route, { kind: 'genre' | 'popular' |
 
 /* ------------------------------------------------------------------- home */
 
-interface HomeSection {
-  key: string;
-  path: string;
-  render: (data: never) => string;
-  skeleton: string;
-}
+/** Path API tiap section beranda; cara menggambarnya ada di HOME_VIEWS (homeview.ts), satu tabel dengan index.astro. */
+const HOME_PATHS: Record<HomeKey, string> = {
+  hero: paths.popular(1),
+  recommended: paths.recommended(1),
+  newest: paths.newest(1),
+  'rank-popular': paths.popular(1),
+  'rank-recommended': paths.recommended(1),
+  genre: paths.genres(),
+};
 
-const HOME_SECTIONS: HomeSection[] = [
-  { key: 'popular', path: paths.popular(1), render: railHtml, skeleton: skelRail() },
-  { key: 'recommended', path: paths.recommended(1), render: gridHtml, skeleton: skelGrid(12) },
-  { key: 'newest', path: paths.newest(1), render: gridHtml, skeleton: skelGrid(12) },
-  { key: 'genre', path: paths.genres(), render: genreCloud, skeleton: skelChips() },
-];
+const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * Beranda sudah berisi data hasil prerender (build time). Di sini kita ambil
  * data terbaru di latar belakang dan menukar isi section HANYA bila berbeda
  * (`data-sig`). Markup identik, jadi tidak ada layout jump. Section yang gagal
  * di-prerender (`data-sig` kosong) menampilkan skeleton lalu diisi di sini.
+ * Beberapa section berbagi satu path (Sorotan + peringkat Populer): `get` menyatukan request-nya.
  */
 export function mountHome(): void {
   mountResumeRail();
-  for (const sec of HOME_SECTIONS) {
-    const body = document.querySelector<HTMLElement>(`[data-sec="${sec.key}"] [data-body]`);
+  for (const key of Object.keys(HOME_VIEWS) as HomeKey[]) {
+    const view = HOME_VIEWS[key];
+    const path = HOME_PATHS[key];
+    const body = document.querySelector<HTMLElement>(`[data-sec="${key}"] [data-body]`);
     if (!body) continue;
 
     const apply = (data: unknown) => {
       body.setAttribute('aria-busy', 'false');
       const s = sig(data);
       if (body.dataset.sig === s) return;
-      body.innerHTML = sec.render(data as never);
+      body.innerHTML = (view.render as (d: never) => string)(data as never);
       body.dataset.sig = s;
       observeCards(body);
       syncBookmarkButtons(body);
@@ -465,7 +481,7 @@ export function mountHome(): void {
         e,
         () => {
           body.setAttribute('aria-busy', 'true');
-          body.innerHTML = sec.skeleton + SR_LOADING;
+          body.innerHTML = view.skeleton + SR_LOADING;
           refresh();
         },
         true,
@@ -473,10 +489,10 @@ export function mountHome(): void {
     };
 
     const refresh = () => {
-      get<unknown>(sec.path, { force: true }).then(apply).catch(fail);
+      get<unknown>(path, { force: true }).then(apply).catch(fail);
     };
 
-    const hit = peekEntry<unknown>(sec.path);
+    const hit = peekEntry<unknown>(path);
     if (hit) {
       apply(hit.data);
       if (hit.age <= STALE_MS) continue;
@@ -496,15 +512,51 @@ export function mountHome(): void {
     btn.textContent = open ? 'Tampilkan lebih sedikit' : `Semua genre (${btn.closest('[data-body]')?.querySelectorAll('.chip').length ?? ''})`;
   });
 
-  // Tombol geser baris Populer (untuk mouse tanpa trackpad).
+  // Tombol geser strip Sorotan dan baris Rekomendasi (untuk mouse tanpa trackpad).
   document.querySelectorAll<HTMLButtonElement>('[data-rail-btn]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const rail = document.querySelector<HTMLElement>('[data-sec="popular"] .rail');
-      if (!rail) return;
+      const track = document.querySelector(`[data-sec="${btn.dataset.railFor}"] [data-body]`)?.firstElementChild;
+      if (!(track instanceof HTMLElement)) return;
       const dir = btn.dataset.railBtn === 'next' ? 1 : -1;
-      rail.scrollBy({ left: dir * rail.clientWidth * 0.85, behavior: 'smooth' });
+      track.scrollBy({ left: dir * track.clientWidth * 0.85, behavior: reducedMotion() ? 'auto' : 'smooth' });
     });
   });
+
+  mountRankTabs();
+}
+
+/**
+ * Sakelar Populer/Rekomendasi di sidebar (ARIA tabs). Kedua daftar sudah ada di halaman: yang tidak
+ * aktif `hidden`, jadi berpindah tidak memanggil API. Panah kiri/kanan, Home, End berpindah tab.
+ */
+function mountRankTabs(): void {
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-rank-tab]'));
+  if (!tabs.length) return;
+  const select = (tab: HTMLButtonElement, focus = false) => {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      const panel = document.querySelector<HTMLElement>(`[data-rank-panel="${t.dataset.rankTab}"]`);
+      if (panel) panel.hidden = !on;
+    }
+    if (focus) tab.focus();
+  };
+  for (const t of tabs) {
+    t.addEventListener('click', () => select(t));
+    t.addEventListener('keydown', (e) => {
+      const i = tabs.indexOf(t);
+      const next =
+        e.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length]
+        : e.key === 'ArrowLeft' ? tabs[(i - 1 + tabs.length) % tabs.length]
+        : e.key === 'Home' ? tabs[0]
+        : e.key === 'End' ? tabs[tabs.length - 1]
+        : undefined;
+      if (!next) return;
+      e.preventDefault();
+      select(next, true);
+    });
+  }
 }
 
 /* -------------------------------------------------------------- not found */

@@ -1,21 +1,15 @@
 ---
 // Beranda: di-prerender saat build sebagai paint pertama yang instan.
 // Di browser, src/lib/client.ts (mountHome) mengambil data terbaru di latar
-// belakang dan menukar section hanya bila isinya berubah. Markup dibuat oleh
-// src/lib/views.ts — fungsi yang sama dipakai klien, jadi tidak ada layout jump.
+// belakang dan menukar section hanya bila isinya berbeda. Markup dibuat oleh
+// HOME_VIEWS (src/lib/homeview.ts) — tabel yang sama dipakai klien, jadi tidak ada layout jump.
 import Base from '../layouts/Base.astro';
+import Panel from '../components/Panel.astro';
+import SecBody from '../components/SecBody.astro';
 import { getPopular, getRecommended, getNewest, getGenres } from '../lib/api';
 import { daftarHref } from '../lib/routes';
-import {
-	railHtml,
-	gridHtml,
-	genreCloud,
-	skelRail,
-	skelGrid,
-	skelChips,
-	sig,
-	SR_LOADING,
-} from '../lib/views';
+import { HOME_VIEWS, type HomeKey } from '../lib/homeview';
+import { ICON_CHEV_LEFT, ICON_CHEV_RIGHT } from '../lib/icons';
 
 // Satu section yang gagal tidak boleh menggagalkan build atau section lain.
 const [popular, recommended, newest, genres] = await Promise.allSettled([
@@ -30,93 +24,87 @@ const ok = <T,>(r: PromiseSettledResult<T>, name: string): T | undefined => {
 	return undefined;
 };
 
+// Data kosong dianggap gagal: klien akan mengisinya (tampilkan skeleton, bukan "kosong").
+const has = <T,>(d?: T[]) => (d && d.length ? d : undefined);
+const view = (key: HomeKey, data?: unknown[]) => {
+	const d = has(data);
+	const v = HOME_VIEWS[key];
+	return { data: d, html: d ? (v.render as (l: never) => string)(d as never) : v.skeleton };
+};
+
 const popularData = ok(popular, 'popular');
 const recommendedData = ok(recommended, 'recommended');
-const newestData = ok(newest, 'newest');
-const genreData = ok(genres, 'genre');
-
-// Data kosong dianggap gagal: klien akan mengisinya (tampilkan skeleton, bukan "kosong").
-const has = (d?: unknown[]) => (d && d.length ? d : undefined);
-const sections = [
-	{
-		key: 'popular',
-		id: 'populer',
-		title: 'Populer',
-		more: '/populer/',
-		data: has(popularData),
-		html: has(popularData) ? railHtml(popularData!) : skelRail(),
-	},
-	{
-		key: 'recommended',
-		id: 'rekomendasi',
-		title: 'Rekomendasi',
-		data: has(recommendedData),
-		html: has(recommendedData) ? gridHtml(recommendedData!) : skelGrid(12),
-	},
-	{
-		key: 'newest',
-		id: 'terbaru',
-		title: 'Terbaru',
-		more: '/terbaru/',
-		data: has(newestData),
-		html: has(newestData) ? gridHtml(newestData!) : skelGrid(12),
-	},
-	{
-		key: 'genre',
-		id: 'genre',
-		title: 'Genre',
-		data: has(genreData),
-		html: has(genreData) ? genreCloud(genreData!) : skelChips(),
-	},
-];
+const hero = view('hero', popularData);
+const reco = view('recommended', recommendedData);
+const newestSec = view('newest', ok(newest, 'newest'));
+const rankPopular = view('rank-popular', popularData);
+const rankReco = view('rank-recommended', recommendedData);
+const genre = view('genre', ok(genres, 'genre'));
 ---
 <Base>
-	<h1 class="sr-only">Baca manga, manhwa, dan manhua online</h1>
-	<!-- Hanya di browser: mountResumeRail (pustaka.ts) mengisi dan menampilkannya bila ada riwayat. -->
-	<section class="sec" id="lanjut" aria-labelledby="h-lanjut" data-sec="resume" hidden>
-		<header class="sec-head">
-			<h2 id="h-lanjut">
-				<i class="mark" aria-hidden="true" />
-				Lanjutkan Membaca
-			</h2>
-			<a class="more" href="/pustaka/">
-				Lihat semua<span aria-hidden="true"> &rarr;</span>
-			</a>
-		</header>
-		<div class="sec-body" data-body></div>
+	<section slot="hero" class="hero" aria-label="Sorotan populer" data-sec="hero">
+		<h1 class="sr-only">Baca manga, manhwa, dan manhua online</h1>
+		<SecBody class="hero-body" {...hero} />
+		<button type="button" class="hero-nav hero-nav-prev" data-rail-btn="prev" data-rail-for="hero" aria-label="Geser sorotan ke kiri">
+			<Fragment set:html={ICON_CHEV_LEFT} />
+		</button>
+		<button type="button" class="hero-nav hero-nav-next" data-rail-btn="next" data-rail-for="hero" aria-label="Geser sorotan ke kanan">
+			<Fragment set:html={ICON_CHEV_RIGHT} />
+		</button>
 	</section>
-	<nav class="quick" aria-label="Jelajahi daftar komik">
-		<a class="chip chip-strong" href={daftarHref()} aria-label="Semua judul">Semua</a>
-		<a class="chip" href={daftarHref('manga')}>Manga</a>
-		<a class="chip" href={daftarHref('manhwa')}>Manhwa</a>
-		<a class="chip" href={daftarHref('manhua')}>Manhua</a>
-	</nav>
-	{
-		sections.map((s) => (
-			<section class="sec" id={s.id} aria-labelledby={`h-${s.id}`} data-sec={s.key}>
-				<header class="sec-head">
-					<h2 id={`h-${s.id}`}>
-						<i class="mark" aria-hidden="true" />
-						{s.title}
-					</h2>
-					{s.key === 'popular' && (
-						<span class="rail-ctl">
-							<button type="button" class="icon-btn" data-rail-btn="prev" aria-label="Geser ke kiri">&lsaquo;</button>
-							<button type="button" class="icon-btn" data-rail-btn="next" aria-label="Geser ke kanan">&rsaquo;</button>
-						</span>
-					)}
-					{s.more && (
-						<a class="more" href={s.more}>
-							Lihat semua<span aria-hidden="true"> &rarr;</span>
-						</a>
-					)}
-				</header>
-				<div class="sec-body" data-body data-sig={s.data ? sig(s.data) : ''} aria-busy={s.data ? 'false' : 'true'}>
-					<Fragment set:html={s.data ? s.html : s.html + SR_LOADING} />
-				</div>
-			</section>
-		))
-	}
+
+	<div class="wrap home">
+		<!-- Hanya di browser: mountResumeRail (pustaka.ts) mengisi dan menampilkannya bila ada riwayat. -->
+		<Panel id="lanjut" sec="resume" title="Lanjutkan Membaca" icon="eye" more="/pustaka/" moreLabel="Pustaka" hidden>
+			<div class="sec-body" data-body></div>
+		</Panel>
+
+		<nav class="quick" aria-label="Jelajahi daftar komik">
+			<a class="chip chip-strong" href={daftarHref()} aria-label="Semua judul">Semua</a>
+			<a class="chip" href={daftarHref('manga')}>Manga</a>
+			<a class="chip" href={daftarHref('manhwa')}>Manhwa</a>
+			<a class="chip" href={daftarHref('manhua')}>Manhua</a>
+		</nav>
+
+		<div class="home-cols">
+			<div class="home-main">
+				<Panel id="rekomendasi" sec="recommended" title="Rekomendasi" icon="star" more="/daftar/" moreLabel="Semua">
+					<span slot="controls" class="rail-ctl">
+						<button type="button" class="icon-btn" data-rail-btn="prev" data-rail-for="recommended" aria-label="Geser rekomendasi ke kiri">
+							<Fragment set:html={ICON_CHEV_LEFT} />
+						</button>
+						<button type="button" class="icon-btn" data-rail-btn="next" data-rail-for="recommended" aria-label="Geser rekomendasi ke kanan">
+							<Fragment set:html={ICON_CHEV_RIGHT} />
+						</button>
+					</span>
+					<SecBody {...reco} />
+				</Panel>
+
+				<Panel id="terbaru" sec="newest" title="Update Terbaru" icon="clock" more="/terbaru/" moreLabel="Lihat semua">
+					<SecBody {...newestSec} />
+				</Panel>
+			</div>
+
+			<aside class="home-side" aria-label="Peringkat dan genre">
+				<Panel id="populer" title="Populer" icon="flame">
+					<div slot="controls" class="rank-tabs" role="tablist" aria-label="Peringkat">
+						<button type="button" class="rank-tab" role="tab" id="rt-popular" data-rank-tab="popular" aria-selected="true" aria-controls="rp-popular">Populer</button>
+						<button type="button" class="rank-tab" role="tab" id="rt-recommended" data-rank-tab="recommended" aria-selected="false" aria-controls="rp-recommended" tabindex="-1">Rekomendasi</button>
+					</div>
+					<div role="tabpanel" id="rp-popular" aria-labelledby="rt-popular" data-sec="rank-popular" data-rank-panel="popular">
+						<SecBody {...rankPopular} />
+					</div>
+					<div role="tabpanel" id="rp-recommended" aria-labelledby="rt-recommended" data-sec="rank-recommended" data-rank-panel="recommended" hidden>
+						<SecBody {...rankReco} />
+					</div>
+				</Panel>
+
+				<Panel id="genre" sec="genre" title="Genre" icon="tag">
+					<SecBody {...genre} />
+				</Panel>
+			</aside>
+		</div>
+	</div>
 </Base>
 <script>
 	import '../lib/boot';

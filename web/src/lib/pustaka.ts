@@ -66,8 +66,16 @@ export function mountLibrary(initial: LibTab): void {
 
   const activeTab = () => view.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
 
+  const count = el.querySelector<HTMLElement>('[data-lib-count]');
+
   const paint = (focus?: () => HTMLElement | null | undefined) => {
-    view.innerHTML = libraryViewHtml({ tab, history: getHistory(), bookmarks: getBookmarks(), now: Date.now() });
+    const history = getHistory();
+    const bookmarks = getBookmarks();
+    view.innerHTML = libraryViewHtml({ tab, history, bookmarks, now: Date.now() });
+    if (count) {
+      count.textContent = `${bookmarks.length} bookmark · ${history.length} riwayat`;
+      count.hidden = false;
+    }
     observeCards(view);
     focus?.()?.focus();
   };

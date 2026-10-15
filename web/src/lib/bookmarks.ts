@@ -5,7 +5,7 @@
  *   - `[data-bm="<slug>"]` (kartu: `button.card-bm`; detail: `button.btn-bookmark`) membawa
  *     `data-title`, `data-cover`, `data-type`; SATU pendengar klik di document menyimpan/menghapus
  *     dan tidak pernah menavigasi (tombol saudara dari `<a class="card">`, bukan anak).
- *   - `syncBookmarkButtons(root)` menyetel `aria-pressed` + teks `.bm-label` ("Simpan"/"Tersimpan")
+ *   - `syncBookmarkButtons(root)` menyetel `aria-pressed` + teks `.bm-label` ("Bookmark"/"Tersimpan")
  *     dari pustaka untuk setiap `[data-bm]` di `root`. Dipanggil setelah setiap render (grid, feed,
  *     beranda, pencarian, daftar, detail) dan otomatis saat `library:change` (perubahan lokal,
  *     tab lain, impor, bfcache).
@@ -22,7 +22,7 @@ export function syncBookmarkButtons(root: ParentNode = document): void {
     // Hanya sentuh DOM bila berubah: fokus & pembaca layar tidak terganggu oleh penulisan yang sama.
     if (btn.getAttribute('aria-pressed') !== String(on)) btn.setAttribute('aria-pressed', String(on));
     const label = btn.querySelector('.bm-label');
-    const text = on ? 'Tersimpan' : 'Simpan';
+    const text = on ? 'Tersimpan' : 'Bookmark';
     if (label && label.textContent !== text) label.textContent = text;
   });
 }
