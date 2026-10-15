@@ -54,7 +54,7 @@ function pump(): void {
 type NetInfo = { saveData?: boolean; effectiveType?: string };
 
 /** false bila pengguna meminta hemat data atau koneksi 2G: tidak ada prefetch sama sekali. */
-function prefetchAllowed(): boolean {
+export function prefetchAllowed(): boolean {
   const c = (navigator as Navigator & { connection?: NetInfo }).connection;
   return !c?.saveData && !/(^|-)2g$/.test(c?.effectiveType ?? '');
 }

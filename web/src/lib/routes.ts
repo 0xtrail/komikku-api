@@ -111,7 +111,12 @@ export const pustakaHref = (tab: LibTab = 'riwayat') => `/pustaka/${tab === 'boo
 export const resumeHref = (chapter: string, page = 0) =>
   `${chapterHref(chapter)}${page > 0 ? `#p${page + 1}` : ''}`;
 
-/** Slug chapter -> slug manga: semua sebelum `-chapter-` terakhir. `undefined` jika pola tidak cocok. */
+/**
+ * Slug chapter -> slug manga: semua sebelum `-chapter-` terakhir. `undefined` jika pola tidak cocok.
+ * HANYA TEBAKAN: salah untuk banyak judul (`solo-leveling-ragnarok-chapter-66` ada di
+ * `/manga/alone-leveling-ragnarok/`). Sumber yang benar adalah `manga_endpoint` dari API chapter;
+ * tebakan ini cadangan untuk API lama dan harus diverifikasi lewat daftar chapter manga (lihat readerlogic.ts).
+ */
 export function mangaSlugOfChapter(chapter: string): string | undefined {
   const i = chapter.toLowerCase().lastIndexOf('-chapter-');
   return i > 0 ? chapter.slice(0, i) : undefined;

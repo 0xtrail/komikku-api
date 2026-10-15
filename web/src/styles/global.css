@@ -1056,17 +1056,33 @@ html[data-view="chapter"] main.wrap {
 	padding-inline: 8px;
 	font-size: 0.85rem;
 }
+/* Tengah bar bawah: nama chapter yang sedang dibaca + "12 / 69" (src/lib/readerview.ts) */
 .fix-now {
+	display: flex;
 	flex: 1.2 1 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
 	min-width: 0;
 	align-self: center;
-	overflow: hidden;
-	text-align: center;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 	font-size: 0.8rem;
 	font-weight: 800;
 	line-height: 1.3;
+}
+.fix-name {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.fix-pg {
+	color: var(--muted);
+	font-size: 0.72rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.fix-pg:empty {
+	display: none;
 }
 .fixbar .fix-back {
 	flex: 0 0 44px;
@@ -1080,12 +1096,196 @@ html[data-view="chapter"] main.wrap {
 		transform 0.2s ease,
 		visibility 0s 0.2s;
 }
+/* Chapter berurutan: pembatas, sakelar "Lanjut otomatis", slot chapter berikutnya, penunjuk halaman, toast lanjut baca
+   (src/lib/reader.ts). Gambar yang belum diberi src menahan tempat lewat aspect-ratio; teks alt-nya disembunyikan. */
+.page:not([src]) {
+	color: transparent;
+}
+html.is-trimming {
+	overflow-anchor: none; /* reader membuang chapter lama dan menghitung kompensasi scroll sendiri */
+}
+.chapter-divider {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px var(--pr) 10px var(--pl);
+	background: var(--card);
+	border-top: 1px solid var(--border);
+	border-bottom: 1px solid var(--border);
+}
+.chapter-divider-name {
+	min-width: 0;
+	font-weight: 800;
+	overflow-wrap: anywhere;
+}
+.chapter-divider-link {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	min-height: 44px;
+	font-size: 0.85rem;
+	font-weight: 700;
+}
+.reader-tools {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 6px;
+}
+.reader-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+.toggle-sw {
+	position: relative;
+	flex: none;
+	width: 40px;
+	height: 24px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface-2);
+	transition: background-color 0.15s ease;
+}
+.toggle-sw::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--muted);
+	transition:
+		transform 0.15s ease,
+		background-color 0.15s ease;
+}
+.reader-toggle[aria-pressed="true"] .toggle-sw {
+	border-color: var(--primary);
+	background: var(--primary);
+}
+.reader-toggle[aria-pressed="true"] .toggle-sw::after {
+	background: var(--on-primary);
+	transform: translateX(16px);
+}
+.reader-progress {
+	display: none; /* ponsel: penunjuk ada di bar bawah (.fix-pg) */
+}
+.append-loading,
+.append-idle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px 14px;
+	min-height: 96px;
+	padding: 16px var(--pr) 16px var(--pl);
+	color: var(--muted);
+	font-size: 0.9rem;
+	font-weight: 600;
+	text-align: center;
+}
+[data-append-slot] .err {
+	width: 100%;
+	margin: 8px auto;
+}
+.reader-end-note {
+	margin: 0;
+	padding: 4px 0 2px;
+	color: var(--muted);
+	font-weight: 700;
+	text-align: center;
+}
+.reader-toast {
+	position: fixed;
+	left: 50%;
+	bottom: calc(76px + var(--safe-b));
+	z-index: 70;
+	display: flex;
+	align-items: center;
+	max-width: min(92vw, 440px);
+	padding: 2px 4px 2px 16px;
+	border-radius: 999px;
+	background: var(--text);
+	color: var(--bg);
+	box-shadow: var(--shadow);
+	font-size: 0.9rem;
+	font-weight: 700;
+	transform: translateX(-50%);
+	animation: toast-in 0.2s ease;
+}
+.reader-toast-text {
+	min-width: 0;
+}
+.reader-toast-btn,
+.reader-toast-x {
+	flex: none;
+	min-height: 44px;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.reader-toast-btn {
+	padding: 0 12px;
+	text-decoration: underline;
+	white-space: nowrap;
+}
+.reader-toast-x {
+	width: 44px;
+	font-size: 1.3rem;
+	line-height: 1;
+}
+@keyframes toast-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 8px);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+}
 @media (min-width: 860px) {
 	.fixbar {
 		display: none; /* desktop: cukup bar atas & akhir chapter */
 	}
 	.reader {
 		padding-bottom: 24px;
+	}
+	/* Tanpa bar bawah, penunjuk halaman mengambang di pojok kanan bawah. */
+	.reader-progress {
+		position: fixed;
+		right: 16px;
+		bottom: 16px;
+		z-index: 60;
+		display: block;
+		padding: 6px 12px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--header-bg);
+		-webkit-backdrop-filter: saturate(1.4) blur(10px);
+		backdrop-filter: saturate(1.4) blur(10px);
+		font-size: 0.8rem;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+	}
+	.reader-progress:empty {
+		display: none;
+	}
+	.reader-toast {
+		bottom: 24px;
 	}
 }
 
@@ -1391,8 +1591,13 @@ html[data-view="chapter"] main.wrap {
 	.card-bm::before,
 	.fixbar,
 	.fixbar.is-hidden,
+	.toggle-sw,
+	.toggle-sw::after,
 	.nav-trigger .chev {
 		transition: none;
+	}
+	.reader-toast {
+		animation: none;
 	}
 	html {
 		scroll-behavior: auto;

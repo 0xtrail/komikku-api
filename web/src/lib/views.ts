@@ -9,7 +9,7 @@
  *
  * ATURAN: setiap string dari API WAJIB lewat `esc()` sebelum masuk template.
  */
-import { slugOf, chapterSlug, type Manga, type Genre, type MangaInfo, type ChapterDetail, type ListTipe } from './api.ts';
+import { slugOf, chapterSlug, type Manga, type Genre, type MangaInfo, type ListTipe } from './api.ts';
 import { mangaHref, chapterHref, genreHref, genreSlug, daftarHref, resumeHref, type LibTab } from './routes.ts';
 // Hanya TIPE (terhapus saat build): views tidak boleh menyentuh storage. Data pustaka dioper sebagai parameter.
 import type { Bookmark, Progress } from './library';
@@ -271,108 +271,8 @@ export function detailHtml(info: MangaInfo, lib: DetailLib): string {
     </section>`;
 }
 
-/* ----------------------------------------------------------------- reader */
-
-export interface ChapterStep {
-  slug: string;
-  name: string;
-}
-
-/**
- * Keadaan navigasi reader.
- *  - none    : slug tidak cocok pola `<manga>-chapter-<n>` -> tanpa navigasi
- *  - pending : info manga (untuk prev/next & nama chapter) belum tiba
- *  - ready   : info tiba (atau gagal: hanya `back`, tanpa prev/next/current)
- * `title` = judul dari API chapter, dipakai bila nama chapter tidak diketahui.
- */
-export interface ReaderCtx {
-  title: string;
-  state: 'none' | 'pending' | 'ready';
-  back?: string;
-  mangaTitle?: string;
-  current?: string;
-  prev?: ChapterStep;
-  next?: ChapterStep;
-}
-
-/** "Chapter 12" -> "Ch. 12" (untuk bar bawah yang sempit). */
+/** "Chapter 12" -> "Ch. 12" (untuk ruang sempit: bar bawah reader, kartu lanjut baca). */
 export const shortName = (n: string) => n.replace(/^chapter\s*/i, 'Ch. ');
-
-/** Judul chapter yang tampil: nama dari chapter_list bila ada, kalau tidak judul API. */
-export const readerTitle = (c: ReaderCtx): string => c.current || c.title;
-
-/** Header reader: tautan kembali ke manga + nama chapter yang sedang dibaca. */
-export function readerHeadHtml(c: ReaderCtx): string {
-  const back = c.back
-    ? `<a class="reader-back" href="${esc(mangaHref(c.back))}"><span aria-hidden="true">&larr;</span> ${esc(c.mangaTitle || 'Info manga')}</a>`
-    : '';
-  return `${back}<h1 class="reader-title">${esc(readerTitle(c))}</h1>`;
-}
-
-/**
- * Tombol prev/next. `pos`:
- *  - top   : baris prev/next di bawah header
- *  - end   : akhir chapter — tombol kembali + prev/next berlabel nama chapter
- *  - fixed : bar tetap di bawah layar (zona jempol): ← | ‹ Ch. 1 | Chapter 2 | Ch. 3 ›
- */
-export function readerNavHtml(c: ReaderCtx, pos: 'top' | 'end' | 'fixed'): string {
-  if (c.state === 'none' || !c.back) return '';
-
-  const step = (dir: 'prev' | 'next'): string => {
-    const s = c[dir];
-    const short = pos === 'fixed';
-    // Tak ada chapter di arah ini (awal / terbaru): label cadangan, singkat di bar bawah yang sempit.
-    const fallback = short ? (dir === 'prev' ? 'Awal' : 'Terbaru') : dir === 'prev' ? 'Sebelumnya' : 'Berikutnya';
-    const label = s ? (short ? shortName(s.name) : s.name) : fallback;
-    const arrow = (a: string) => `<span aria-hidden="true">${a}</span>`;
-    const inner =
-      dir === 'prev'
-        ? `${arrow('&lsaquo;')}<span class="lbl">${esc(label)}</span>`
-        : `<span class="lbl">${esc(label)}</span>${arrow('&rsaquo;')}`;
-    if (c.state === 'pending') return `<span class="btn is-pending" aria-hidden="true">${inner}</span>`;
-    if (!s) return `<span class="btn is-disabled" aria-disabled="true">${inner}</span>`;
-    return `<a class="btn${dir === 'next' ? ' btn-primary' : ''}" rel="${dir}" href="${esc(chapterHref(s.slug))}" aria-label="${
-      dir === 'prev' ? 'Chapter sebelumnya' : 'Chapter berikutnya'
-    }: ${esc(s.name)}">${inner}</a>`;
-  };
-
-  const back = esc(mangaHref(c.back));
-
-  if (pos === 'fixed') {
-    const now =
-      c.state === 'pending'
-        ? '<span class="fix-now sk" aria-hidden="true">&nbsp;</span>'
-        : `<span class="fix-now">${esc(readerTitle(c))}</span>`;
-    return `<nav class="fixbar" data-rnav="fixed" aria-label="Navigasi chapter">
-      <a class="btn btn-ghost fix-back" href="${back}" aria-label="Kembali ke info manga">&larr;</a>
-      ${step('prev')}${now}${step('next')}
-    </nav>`;
-  }
-
-  return `<nav class="reader-bar reader-bar-${pos}" data-rnav="${pos}" aria-label="Navigasi chapter (${pos === 'top' ? 'atas' : 'akhir'})">
-    ${pos === 'end' ? `<a class="btn btn-ghost reader-home" href="${back}">&larr; Info manga</a>` : ''}
-    <span class="reader-steps">${step('prev')}${step('next')}</span>
-  </nav>`;
-}
-
-export function readerHtml(ch: ChapterDetail, ctx: ReaderCtx): string {
-  // 2 gambar pertama eager (yang pertama prioritas tinggi); sisanya lazy dengan cadangan aspect-ratio di CSS.
-  const pages = ch.image
-    .map(
-      (src, i) =>
-        `<img class="page" src="${esc(src)}" alt="Halaman ${i + 1}" ${
-          i === 0 ? 'loading="eager" fetchpriority="high"' : i === 1 ? 'loading="eager"' : 'loading="lazy"'
-        } decoding="async">`,
-    )
-    .join('');
-  return `<div class="reader">
-    <header class="reader-head" data-rnav-slot="head">${readerHeadHtml(ctx)}</header>
-    <div data-rnav-slot="top">${readerNavHtml(ctx, 'top')}</div>
-    <div class="pages">${pages || '<p class="empty">Chapter ini belum memiliki halaman.</p>'}</div>
-    <div data-rnav-slot="end">${readerNavHtml(ctx, 'end')}</div>
-    <div data-rnav-slot="fixed">${readerNavHtml(ctx, 'fixed')}</div>
-  </div>`;
-}
 
 /* ---------------------------------------------------------- daftar komik */
 

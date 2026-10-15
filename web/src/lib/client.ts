@@ -1,7 +1,7 @@
 /**
- * Render sisi-klien untuk rute yang tidak bisa di-prerender: /manga/<slug>,
- * /chapter/<slug>, /genre/<slug>, /populer, /terbaru, /search, serta hidrasi
- * beranda (yang sudah di-prerender saat build).
+ * Render sisi-klien untuk rute yang tidak bisa di-prerender: /genre/<slug>,
+ * /populer, /terbaru, /daftar, /search, serta hidrasi beranda (yang sudah
+ * di-prerender saat build). Reader chapter ada di reader.ts, detail manga di detail.ts.
  *
  * Kenapa klien, bukan server: output `static` tidak bisa punya route dinamis
  * tanpa getStaticPaths() (data API, bukan daftar tetap) DAN tidak bisa
@@ -23,15 +23,12 @@ import {
   paths,
   peek,
   peekEntry,
-  type ChapterDetail,
   type ErrorKind,
   type Genre,
   type Manga,
-  type MangaInfo,
 } from './api';
-import { daftarHref, genreHref, listHref, mangaSlugOfChapter, type Route } from './routes';
+import { daftarHref, genreHref, listHref, type Route } from './routes';
 import { observeCards, prefetchPath } from './prefetch';
-import { getProgress, markChapterRead, saveProgress } from './library';
 import { appEl, setTitle } from './page';
 import { mountResumeRail } from './pustaka';
 import { syncBookmarkButtons } from './bookmarks';
@@ -46,17 +43,11 @@ import {
   genreCloud,
   gridHtml,
   railHtml,
-  readerHtml,
-  readerHeadHtml,
-  readerNavHtml,
-  readerTitle,
   sig,
   skelChips,
   skelGrid,
   skelListing,
   skelRail,
-  skelReader,
-  type ReaderCtx,
 } from './views';
 
 export interface LoadOpts<T> {
@@ -138,167 +129,6 @@ export function mountSearch(q: string): void {
       observeCards(el);
       syncBookmarkButtons(el);
     },
-  });
-}
-
-/* ----------------------------------------------------------------- reader */
-
-export function mountChapter(slug: string): void {
-  const el = appEl();
-  if (!el) return;
-
-  const mangaSlug = mangaSlugOfChapter(slug);
-  const infoPath = mangaSlug ? paths.info(mangaSlug) : undefined;
-  let info: MangaInfo | undefined = infoPath ? peek<MangaInfo>(infoPath) : undefined;
-  let infoFailed = false;
-  let chTitle = ''; // judul dari API chapter: cadangan bila nama chapter tak diketahui
-  let ctx: ReaderCtx = { title: '', state: 'none' };
-  const stepLinks: { prev?: string; next?: string } = {};
-
-  /** Susun keadaan navigasi dari info manga (kalau sudah ada) + slug chapter ini. */
-  const buildCtx = (): ReaderCtx => {
-    if (!mangaSlug) return { title: chTitle, state: 'none' };
-    const base: ReaderCtx = { title: chTitle, state: 'ready', back: mangaSlug };
-    if (infoFailed) return base;
-    if (!info) return { ...base, state: 'pending' };
-    const list = info.chapter_list ?? [];
-    const i = list.findIndex((c) => chapterSlug(c.endpoint).toLowerCase() === slug.toLowerCase());
-    const step = (c?: { name: string; endpoint: string }) =>
-      c ? { slug: chapterSlug(c.endpoint), name: c.name } : undefined;
-    // chapter_list urut terbaru -> terlama: indeks lebih besar = chapter lebih awal.
-    return i < 0
-      ? { ...base, mangaTitle: info.title }
-      : { ...base, mangaTitle: info.title, current: list[i].name, prev: step(list[i + 1]), next: step(list[i - 1]) };
-  };
-
-  /* Pustaka: catat chapter ini sekali, setelah chapter tampil DAN info manga (judul, sampul) tiba.
-     Posisi halaman/offset sebenarnya dicatat reader (fase 2); di sini hanya titik awal. */
-  let rendered = false;
-  let pageCount = 0;
-  let tracked = false;
-  const track = () => {
-    if (tracked || !rendered || !info || !mangaSlug) return;
-    tracked = true;
-    if (getProgress(mangaSlug)?.chapter.slug.toLowerCase() === slug.toLowerCase()) return; // lanjut baca: jangan timpa posisi
-    saveProgress({
-      manga: { slug: mangaSlug, title: info.title, cover: info.thumbnail, type: info.type },
-      chapter: { slug, name: ctx.current ?? chTitle },
-      page: 0,
-      pageCount,
-      offset: 0,
-    });
-  };
-
-  /** Perbarui header + semua bar navigasi (dipanggil saat chapter selesai dirender dan saat info tiba). */
-  const applyNav = () => {
-    ctx = buildCtx();
-    const put = (pos: string, html: string) => {
-      const slot = el.querySelector(`[data-rnav-slot="${pos}"]`);
-      if (slot) slot.innerHTML = html;
-    };
-    put('head', readerHeadHtml(ctx));
-    put('top', readerNavHtml(ctx, 'top'));
-    put('end', readerNavHtml(ctx, 'end'));
-    put('fixed', readerNavHtml(ctx, 'fixed'));
-    setTitle(ctx.mangaTitle ? `${ctx.mangaTitle} — ${readerTitle(ctx)}` : readerTitle(ctx));
-    stepLinks.prev = el.querySelector<HTMLAnchorElement>('a[rel="prev"]')?.href;
-    stepLinks.next = el.querySelector<HTMLAnchorElement>('a[rel="next"]')?.href;
-    bar = el.querySelector<HTMLElement>('.fixbar');
-    syncBar();
-    track();
-  };
-
-  /* Bar bawah: sembunyi saat scroll turun, muncul saat scroll naik / di awal chapter / (disembunyikan) di akhir chapter. */
-  let bar: HTMLElement | null = null;
-  let lastY = window.scrollY;
-  let scrollHidden = false;
-  const syncBar = () => {
-    if (!bar) return;
-    const y = window.scrollY;
-    const dy = y - lastY;
-    if (Math.abs(dy) >= 4) {
-      lastY = y; // akumulasi: scroll pelan tetap terdeteksi
-      if (dy > 0) scrollHidden = true;
-      else scrollHidden = false;
-    }
-    if (y < 80) scrollHidden = false;
-    const atEnd = y + window.innerHeight >= document.documentElement.scrollHeight - 80; // nav akhir chapter sudah terlihat
-    bar.classList.toggle('is-hidden', scrollHidden || atEnd);
-  };
-
-  // Info manga (untuk prev/next & nama chapter) dimuat PARALEL dengan chapter, bukan setelahnya.
-  if (infoPath && !info) {
-    get<MangaInfo>(infoPath)
-      .then((i) => {
-        info = i;
-        applyNav();
-      })
-      .catch(() => {
-        infoFailed = true; // hanya tombol kembali; prev/next dihilangkan, judul pakai judul API
-        applyNav();
-      });
-  }
-
-  loadView<ChapterDetail>(el, {
-    path: paths.chapter(slug),
-    skeleton: skelReader(),
-    revalidate: false, // render ulang akan mereset posisi baca
-    render: (ch) => {
-      chTitle = ch.title;
-      ctx = buildCtx();
-      el.innerHTML = readerHtml(ch, ctx);
-      rendered = true;
-      pageCount = ch.image.length;
-      applyNav();
-
-      // Nav akhir chapter masuk layar = chapter selesai dibaca.
-      const end = el.querySelector('[data-rnav-slot="end"]');
-      if (end && mangaSlug && pageCount && typeof IntersectionObserver !== 'undefined') {
-        const io = new IntersectionObserver((entries) => {
-          if (!entries.some((en) => en.isIntersecting)) return;
-          io.disconnect();
-          markChapterRead(mangaSlug, slug);
-        });
-        io.observe(end);
-      }
-    },
-  });
-
-  // Satu listener scroll (rAF-throttled): bar bawah + prefetch chapter berikutnya di ~50% halaman.
-  let ticking = false;
-  let prefetched = false;
-  window.addEventListener(
-    'scroll',
-    () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        ticking = false;
-        syncBar();
-        if (!prefetched && ctx.next) {
-          const doc = document.documentElement;
-          const progress = (window.scrollY + window.innerHeight) / Math.max(1, doc.scrollHeight);
-          if (progress > 0.5) {
-            prefetched = true;
-            prefetchPath(paths.chapter(ctx.next.slug), 'high');
-          }
-        }
-      });
-    },
-    { passive: true },
-  );
-  // Fokus keyboard ke bar yang tersembunyi: tampilkan.
-  el.addEventListener('focusin', (e) => {
-    if (e.target instanceof Element && e.target.closest('.fixbar')) bar?.classList.remove('is-hidden');
-  });
-
-  // Pintasan keyboard: ← chapter sebelumnya, → berikutnya.
-  document.addEventListener('keydown', (e) => {
-    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    const t = e.target;
-    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    const href = e.key === 'ArrowLeft' ? stepLinks.prev : e.key === 'ArrowRight' ? stepLinks.next : undefined;
-    if (href) location.assign(href);
   });
 }
 
