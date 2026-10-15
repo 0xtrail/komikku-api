@@ -98,6 +98,23 @@ test('resolveSteps: chapter pertama tidak punya prev', () => {
   assert.equal(s.next?.name, 'Chapter 66');
 });
 
+test('chapter_list null (seri tanpa chapter) dan nomor chapter yang bukan aritmetika tidak membuat reader gagal', () => {
+  assert.equal(L.listHasChapter(null, 'x-chapter-1'), false);
+  assert.equal(L.listName(null, 'x-chapter-1'), undefined);
+  const s = L.resolveSteps('x-chapter-1', { prev_endpoint: '', next_endpoint: '/x-chapter-1-5/' }, null);
+  assert.equal(s.prev, undefined);
+  assert.equal(s.next?.slug, 'x-chapter-1-5');
+  assert.equal(s.latest, false, 'tanpa daftar dan next ada: bukan terbaru');
+  // Tetangga selalu dari API/daftar, tidak pernah dihitung dari angka: 00-1 -> 00-15 -> ... -> 271-5.
+  const odd = L.resolveSteps(
+    'solo-leveling-ragnarok-chapter-00-1',
+    { prev_endpoint: '', next_endpoint: '/solo-leveling-ragnarok-chapter-00-15/' },
+    null,
+  );
+  assert.equal(odd.next?.slug, 'solo-leveling-ragnarok-chapter-00-15');
+  assert.equal(L.nameFromSlug('solo-leveling-ragnarok-chapter-271-5'), 'Chapter 271.5');
+});
+
 test('listName: nama dari daftar, undefined bila daftar belum ada atau tak memuatnya', () => {
   assert.equal(L.listName(LIST, 'solo-leveling-ragnarok-chapter-66'), 'Chapter 66');
   assert.equal(L.listName(undefined, 'solo-leveling-ragnarok-chapter-66'), undefined);

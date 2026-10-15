@@ -40,7 +40,8 @@ export interface MangaInfo {
   genre?: string[];
   /** Paragraf dipisah baris kosong ("\n\n"). Belum ada di API lama: tampilan menyembunyikan bagiannya. */
   synopsis?: string;
-  chapter_list?: ChapterRef[];
+  /** `null` untuk seri tanpa chapter (bukan array kosong): selalu pakai `?? []` atau `?.`. */
+  chapter_list?: ChapterRef[] | null;
 }
 
 export interface ChapterDetail {
