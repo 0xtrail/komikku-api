@@ -98,7 +98,7 @@ test('detailHtml tanpa riwayat: CTA lama + tombol Simpan ber-[data-bm], tanpa si
   assert.ok(h.includes('Baca Chapter Awal') && h.includes('Chapter Terbaru'));
   assert.ok(h.includes('data-bookmark') && h.includes('data-bm="judul"') && h.includes('data-title="Judul &lt;X&gt;"'));
   assert.ok(h.includes('data-cover="https://x/t.jpg"') && h.includes('data-type="Manhwa"'));
-  assert.ok(h.includes('aria-pressed="false"') && h.includes('<span class="bm-label">Simpan</span>'));
+  assert.ok(h.includes('aria-pressed="false"') && h.includes('<span class="bm-label">Bookmark</span>'));
   assert.ok(!h.includes('data-synopsis') && !h.includes('btn-resume'));
   assert.ok(h.includes('Judul &lt;X&gt;') && !h.includes('<X>'));
   assert.ok(!h.includes('is-read'));
@@ -124,12 +124,59 @@ test('detailHtml dengan pustaka: Lanjutkan, hal., read, Terakhir dibaca, Tersimp
   assert.ok(h0.includes('href="/chapter/judul-chapter-2/"') && !h0.includes('hal.'));
 });
 
-test('detailHtml: tanpa chapter tetap punya Simpan; sinopsis di antara artikel dan daftar chapter', () => {
+test('detailHtml: tanpa chapter tetap punya Bookmark; sinopsis di panel judul, sebelum tombol dan daftar chapter', () => {
   const lib = { slug: 'judul', bookmarked: false, read: new Set<string>() };
   const h = v.detailHtml({ ...info, chapter_list: [], synopsis: 'x' }, lib);
   assert.ok(h.includes('Belum ada chapter yang tersedia') && h.includes('data-bm="judul"'));
+  assert.ok(!h.includes('data-sort'), 'tanpa chapter tak ada tombol urutan');
   const withSyn = v.detailHtml({ ...info, synopsis: 'x' }, lib);
-  assert.ok(withSyn.indexOf('</article>') < withSyn.indexOf('data-synopsis') && withSyn.indexOf('data-synopsis') < withSyn.indexOf('chapter-box'));
+  const at = (s: string) => withSyn.indexOf(s);
+  assert.ok(at('<h1>') < at('data-synopsis') && at('data-synopsis') < at('class="cta"') && at('class="cta"') < at('chapter-box'));
+});
+
+test('detailHtml: latar sampul dekoratif, statistik (Rating/Chapter/Tipe), Status + Pengarang, genre', () => {
+  const lib = { slug: 'judul', bookmarked: false, read: new Set<string>() };
+  const h = v.detailHtml({ ...info, rating: '15+', status: 'ongoing', author: 'Si <A>', synopsis: 'x' }, lib);
+  assert.ok(h.includes('<div class="detail-bg" aria-hidden="true"><img src="https://x/t.jpg" alt=""'), 'latar kabur: alt kosong, aria-hidden');
+  assert.ok(/<dt>Rating<\/dt><dd class="stat-gold">15\+<\/dd>/.test(h));
+  assert.ok(/<dt>Chapter<\/dt><dd class="stat-green">3<\/dd>/.test(h));
+  assert.ok(/<dt>Tipe<\/dt><dd class="stat-blue">Manhwa<\/dd>/.test(h));
+  assert.ok(h.includes('<dt>Status</dt>') && h.includes('ongoing') && h.includes('Si &lt;A&gt;') && !h.includes('Si <A>'));
+  assert.ok(h.includes('class="chip chip-sm" href="/genre/action/"'));
+  const none = v.detailHtml({ ...info, genre: undefined }, lib);
+  assert.ok(/<dt>Rating<\/dt><dd class="stat-gold">-<\/dd>/.test(none), 'tanpa rating: tanda hubung, bukan angka karangan');
+  assert.ok(!none.includes('aria-label="Genre"'));
+  assert.ok(!v.detailHtml({ ...info, thumbnail: '' }, lib).includes('detail-bg'), 'tanpa sampul: tanpa latar');
+});
+
+test('detailHtml: tombol urutan chapter membalik daftar; kotak cari hanya untuk > 8 chapter', () => {
+  const lib = { slug: 'judul', bookmarked: false, read: new Set<string>() };
+  const order = (h: string) => [...h.matchAll(/class="ch-name">(Chapter \d+)</g)].map((m) => m[1]);
+  const newest = v.detailHtml(info, lib);
+  assert.deepEqual(order(newest), ['Chapter 3', 'Chapter 2', 'Chapter 1']);
+  assert.ok(newest.includes('data-sort') && newest.includes('<span class="sort-lbl">Terbaru</span>'));
+  assert.ok(!newest.includes('data-filter'), '3 chapter: tanpa kotak cari');
+  const oldest = v.detailHtml(info, { ...lib, oldestFirst: true });
+  assert.deepEqual(order(oldest), ['Chapter 1', 'Chapter 2', 'Chapter 3']);
+  assert.ok(oldest.includes('<span class="sort-lbl">Terlama</span>') && oldest.includes('terlama dulu'));
+  const many = Array.from({ length: 12 }, (_, i) => ({ name: `Chapter ${12 - i}`, endpoint: `/judul-chapter-${12 - i}/` }));
+  const big = v.detailHtml({ ...info, chapter_list: many }, lib);
+  assert.ok(big.includes('data-filter') && big.includes('data-count') && big.includes('12 Chapter'));
+});
+
+test('pageHeadHtml: <h1> + pil di-escape; sub dan filter dioper apa adanya', () => {
+  const h = v.pageHeadHtml({ title: 'Hasil pencarian: <b>x</b>', pill: '3 judul', sub: '<p class="ph-sub">s</p>', filters: '<div class="filter-bar"></div>' });
+  assert.ok(h.startsWith('<header class="page-head filter-panel">') && h.includes('<h1>Hasil pencarian: &lt;b&gt;x&lt;/b&gt;</h1>'));
+  assert.ok(h.includes('<span class="pill">3 judul</span>') && h.includes('<p class="ph-sub">s</p>') && h.includes('filter-bar'));
+  assert.ok(!v.pageHeadHtml({ title: 'T' }).includes('pill'));
+});
+
+test('daftarFilterHtml: tab jenis + tombol Genre (aria-expanded/aria-controls, panel hidden)', () => {
+  const h = v.daftarFilterHtml('manhua');
+  assert.ok(h.includes('class="seg"') && /href="\/daftar\/\?tipe=manhua"[^>]*aria-current="page"/.test(h));
+  assert.equal((h.match(/aria-current="page"/g) ?? []).length, 1, 'tombol Genre bukan tab jenis');
+  assert.ok(/data-genre-toggle aria-expanded="false" aria-controls="genre-pop-panel"/.test(h));
+  assert.ok(/id="genre-pop-panel" data-genre-panel[^>]*hidden/.test(h));
 });
 
 test('routes: daftar & pustaka, href, apiPathFor', () => {
@@ -201,6 +248,21 @@ test('cardHtml: tanpa <img> bila sampul kosong; dengan sampul tetap sama', () =>
   assert.ok(v.cardHtml({ title: 'T', image: 'https://x/i.jpg', endpoint: '/manga/t/' }).includes('loading="lazy"'));
 });
 
+test('cardHtml: chip jenis berpenanda titik di dalam sampul; tanpa jenis tanpa chip', () => {
+  const h = v.cardHtml({ title: 'T', image: 'https://x/i.jpg', type: 'Manhwa', endpoint: '/manga/t/' });
+  assert.ok(h.includes('<span class="badge badge-manhwa"><i class="dot" aria-hidden="true"></i>Manhwa</span>'));
+  assert.ok(h.indexOf('badge-manhwa') < h.indexOf('</span><h3'), 'chip di dalam .cover, sebelum judul');
+  assert.ok(!v.cardHtml({ title: 'T', image: '', endpoint: '/manga/t/' }).includes('badge'));
+  assert.ok(v.cardHtml({ title: 'T', image: '', endpoint: '/manga/t/' }, 4).includes('<span class="rank" aria-hidden="true">4</span>'));
+});
+
+test('railHtml: peringkat bisa dimatikan (Rekomendasi); resume rail memakai kartu <li class="card-li">', () => {
+  const list = [manga];
+  assert.ok(v.railHtml(list).includes('class="rank"') && !v.railHtml(list, false).includes('class="rank"'));
+  assert.equal(v.recoRailHtml(list), v.railHtml(list, false));
+  assert.ok(v.resumeRailHtml([hist[0]]).includes('<li class="card-li">'));
+});
+
 /* --------------------------------------------------- tombol bookmark di kartu */
 
 const manga = { title: 'Solo Leveling', image: 'https://img.example/s.jpg', type: 'Manhwa', endpoint: '/manga/solo-leveling/' };
@@ -215,8 +277,8 @@ test('cardItemHtml: tombol [data-bm] adalah SAUDARA <a class="card"> di dalam <l
   assert.ok(html.includes('type="button"'), 'bukan tombol submit');
   assert.ok(html.includes('data-bm="solo-leveling"') && html.includes('data-title="Solo Leveling"'));
   assert.ok(html.includes('data-cover="https://img.example/s.jpg"') && html.includes('data-type="Manhwa"'));
-  assert.ok(html.includes('aria-pressed="false"') && html.includes('aria-label="Simpan Solo Leveling"'));
-  assert.ok(html.includes('<span class="bm-label">Simpan</span>'));
+  assert.ok(html.includes('aria-pressed="false"') && html.includes('aria-label="Bookmark Solo Leveling"'));
+  assert.ok(html.includes('<span class="bm-label">Bookmark</span>'), 'teks tampil termuat di nama aksesibel');
 });
 
 test('gridHtml dan railHtml: setiap kartu punya tepat satu tombol bookmark; rail membawa peringkat', () => {
@@ -250,5 +312,5 @@ test('regresi escape: judul berisi HTML tampil sebagai teks di semua tampilan (b
   // Atribut data-title/aria-label membawa teks yang sama dan tetap tertutup rapi.
   const item = v.cardItemHtml(evil);
   assert.ok(item.includes(`data-title="${EVIL_ESCAPED}"`));
-  assert.ok(item.includes(`aria-label="Simpan ${EVIL_ESCAPED}"`));
+  assert.ok(item.includes(`aria-label="Bookmark ${EVIL_ESCAPED}"`));
 });

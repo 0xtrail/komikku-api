@@ -1,0 +1,17 @@
+---
+// Isi satu section beranda yang bisa ditukar: `data-sig` = tanda tangan data yang tampil (kosong =
+// belum ada data, tampilkan skeleton). Markup `html` berasal dari HOME_VIEWS (homeview.ts) — fungsi
+// yang sama dengan yang dipakai client.ts, jadi penukaran tidak menggeser layout.
+import { sig, SR_LOADING } from '../lib/views';
+
+interface Props {
+	data?: unknown[];
+	html: string;
+	class?: string;
+}
+
+const { data, html, class: cls } = Astro.props;
+---
+<div class:list={['sec-body', cls]} data-body data-sig={data ? sig(data) : ''} aria-busy={data ? 'false' : 'true'}>
+	<Fragment set:html={data ? html : html + SR_LOADING} />
+</div>

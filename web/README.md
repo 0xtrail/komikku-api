@@ -28,6 +28,27 @@ halaman beranda tetap ter-build dan menampilkan pesan error, bukan gagal total.
 Dokploy bila di-deploy lewat sana. Prefix `PUBLIC_` diperlukan agar nilainya
 tersedia di bundle browser.
 
+## Desain
+
+Tampilan bergaya Asura Scans dan **gelap saja**: latar `#13111a`, aksen ungu `#913FE2`, panel
+`#1f1a2e`, sudut 6px, header ungu setinggi 64px. Tidak ada tema terang, tombol ganti tema, maupun
+tab bar bawah; navigasi ponsel lewat burger + baris cari di header, dan Pustaka ada sebagai tombol
+(dengan lencana jumlah bookmark) di sisi kanan header.
+
+- **Design token** ada di satu tempat: `src/styles/tokens.css` (warna, radius, jarak, durasi, bayangan,
+  `color-scheme: dark`). Berkas CSS lain hanya memakai `var(--...)`; jangan menulis warna mentah di sana.
+- `src/styles/global.css` hanya berisi `@import` berurutan: `tokens`, `components` (tombol, chip, pil,
+  panel), `header`, `cards`, `home`, `listing`, `detail`, `reader`, `library`, `states`. Urutan impor
+  = urutan cascade.
+- Ikon adalah SVG inline buatan sendiri di `src/lib/icons.ts` (string murni, `aria-hidden`, warna
+  `currentColor`). Tanpa paket ikon, tanpa Tailwind, tanpa hotlink ke situs lain.
+- `<main id="main">` tidak lagi dibungkus `.wrap`: tiap halaman memasang `.wrap` sendiri, sehingga hero
+  beranda (slot `hero` di `Base.astro`) bisa selebar layar.
+- Beranda memakai tata letak dua kolom: Rekomendasi (rail geser) dan Update Terbaru di kiri; Populer
+  (tab Populer/Rekomendasi berperingkat) dan Genre di kanan. Markup semua section dibuat oleh tabel
+  `HOME_VIEWS` (`src/lib/homeview.ts`), dipakai build time dan browser sehingga tidak ada layout jump.
+- Label tombol simpan di UI adalah **Bookmark** (menjadi **Tersimpan** bila sudah disimpan).
+
 ## Struktur
 
 ```
@@ -38,8 +59,8 @@ src/pages/pustaka.astro    shell Pustaka (?tab=riwayat|bookmark) — data dari l
 src/pages/view.astro       shell untuk /manga/*, /chapter/*, /genre/*, /populer/*, /terbaru/*
 src/pages/404.astro        halaman 404 bermerek (dist/404.html) — statis, tanpa boot.ts
 src/pages/50x.astro        halaman galat server bermerek (dist/50x/index.html) — statis, tanpa boot.ts
-src/layouts/Base.astro     <head>, tema, header, <main>, tab bar bawah
-src/components/            Nav.astro (header + sub-menu Daftar + kotak saran), TabBar.astro (navigasi bawah ponsel)
+src/layouts/Base.astro     <head>, header, <main> (slot `hero` + isi halaman), footer; tanpa tema
+src/components/            Nav.astro (header: burger, logo, menu, kotak cari + saran, tombol Pustaka), Panel.astro + SecBody.astro (panel section beranda)
 src/lib/api.ts             satu-satunya modul pemanggil API + cache (memori + sessionStorage)
 src/lib/routes.ts          URL halaman -> rute -> path API (dipakai boot & prefetch)
 src/lib/views.ts           template HTML (string) — dipakai build time DAN browser
@@ -49,7 +70,7 @@ src/lib/readerlogic.ts     logika murni reader (manga/tetangga chapter, `#p<N>`,
 src/lib/readerview.ts      template reader (string murni): header + sakelar, bar navigasi, `section.chapter`, slot bawah, toast
 src/lib/readerimg.ts       pemuat gambar halaman (data-src + IntersectionObserver) dan pemanasan gambar chapter berikutnya
 src/lib/readerresume.ts    melompat ke posisi terakhir dan menahannya selama gambar dimuat + toast "Lanjut dari halaman N"
-src/lib/detail.ts          halaman detail manga: sinopsis, Simpan, Lanjutkan, tanda chapter terbaca
+src/lib/detail.ts          halaman detail manga: sinopsis, Bookmark, Lanjutkan, urutan + cari chapter, tanda terbaca
 src/lib/library.ts         pustaka di localStorage: bookmark, riwayat, posisi baca, ekspor/impor, event `library:change`
 src/lib/bookmarks.ts       tombol bookmark `[data-bm]` di kartu/detail + lencana `[data-bm-count]` (satu pendengar klik)
 src/lib/errorview.ts       markup keadaan galat (string murni): dipakai 404.astro, 50x.astro, dan aplikasi
@@ -61,10 +82,16 @@ src/lib/navmenu.ts         sub-menu Daftar di header desktop (disclosure)
 src/lib/page.ts            pembantu kecil bersama (judul dokumen, elemen #app)
 src/lib/prefetch.ts        prefetch (IntersectionObserver, sentuh, hover) dengan antrean terbatas
 src/lib/boot.ts            dispatcher: memilih halaman dari URL
-src/lib/site.ts            perilaku header: tema, menu aktif, cari
+src/lib/site.ts            perilaku di setiap halaman: menu aktif, header (`initHeader`), sub-menu Daftar, saran cari, prefetch, bookmark
+src/lib/header.ts          panel navigasi + baris cari di ponsel, pintasan `/` dan Cmd/Ctrl+K
+src/lib/icons.ts           ikon SVG inline (string konstan)
+src/lib/homeview.ts        `HOME_VIEWS`: render + skeleton tiap section beranda (hero, rail, update, peringkat, genre)
+src/lib/genrepop.ts        popover filter Genre di halaman daftar (disclosure ARIA)
+src/lib/readerui.ts        bar reader yang bersembunyi saat gulir turun, pil petunjuk, `is-at-end`
+src/styles/                tokens.css + modul CSS per area (lihat bagian Desain); global.css hanya `@import`
 public/_redirects          rewrite 200 ke /view/index.html (Cloudflare Pages)
 nginx.conf                 rewrite yang sama untuk image Docker + halaman galat bermerek
-tests/                     tes Node polos (`npm test`): library, views/escape, jenis galat, logika + template reader
+tests/                     tes Node polos (`npm test`): library, views/escape, beranda, jenis galat, logika + template reader
 ```
 
 Prefix rute dinamis (`manga|chapter|genre|populer|terbaru`) harus sama di
@@ -94,13 +121,13 @@ disatukan) dan menolak berkas yang bentuknya salah tanpa mengubah apa pun.
 Setiap kartu di grid/baris Populer/feed adalah `<li class="has-bm">` berisi tautan kartu
 **dan**, sebagai saudaranya (bukan anak `<a>`), tombol
 `<button type="button" class="card-bm" data-bm="<slug>" data-title data-cover data-type
-aria-pressed="true|false" aria-label="Simpan <judul>">` dengan ikon dan `span.bm-label`
-("Simpan"/"Tersimpan", disembunyikan secara visual di kartu). Tombol Simpan di halaman
+aria-pressed="true|false" aria-label="Bookmark <judul>">` dengan ikon dan `span.bm-label`
+("Bookmark"/"Tersimpan"; teks tampil di kartu). Tombol Bookmark di halaman
 detail memakai atribut yang sama (`data-bm`, selain `data-bookmark` lama). Satu pendengar
 klik di `document` (`bookmarks.ts`) menyimpan/menghapus dan tidak pernah menavigasi.
 `syncBookmarkButtons(root = document)` menyetel `aria-pressed` + `.bm-label` dari pustaka;
 dipanggil setelah setiap render dan otomatis saat `library:change`.
-`[data-bm-count]` (di tautan Pustaka header dan tab bar) berisi jumlah bookmark dan
+`[data-bm-count]` (`.nav-badge` di tombol Pustaka header) berisi jumlah bookmark dan
 `hidden` bila 0 (`syncBookmarkCount()`).
 
 `library.ts` menembakkan `CustomEvent('library:change', { detail: { kind } })` di
@@ -122,8 +149,12 @@ Satu halaman bisa memuat beberapa chapter berurutan. Hook stabil (untuk restyle/
   dengan `[data-retry]`.
 - `[data-autonext-toggle][aria-pressed]` sakelar "Lanjut otomatis" di header, tersimpan di
   `localStorage` kunci `mr:reader:autonext` (`"0"` = mati; selain itu aktif).
-- `[data-read-progress]` ("12 / 69") di bar bawah (`.fix-pg`, ponsel) dan di pil mengambang pojok kanan
-  bawah (`.reader-progress`, >= 860px karena bar bawah disembunyikan di desktop).
+- `[data-read-progress]` ("12 / 69") di bar bawah (`.fix-pg`, ponsel) dan di bar atas
+  (`.reader-progress`, desktop >= 860px; di sana `.fix-pg` disembunyikan).
+- Bar atas dan bar bawah bersembunyi saat gulir turun dan muncul saat gulir naik, saat ketuk area halaman,
+  atau saat fokus keyboard masuk ke bar (`readerui.ts`: kelas `is-chrome-hidden` pada `[data-reader]`;
+  `is-at-end` menyembunyikan bar bawah di dasar halaman). Saat bar pertama kali bersembunyi muncul pil
+  `.reader-hint` 2,5 detik. Panel akhir chapter memakai `.end-panel`.
 - `[data-reader-toast]` toast lanjut baca dengan `[data-toast-restart]` ("Mulai dari awal") dan `[data-toast-close]`.
 
 **Manga induk tidak bisa ditebak dari slug chapter** (`solo-leveling-ragnarok-chapter-66` ada di
@@ -164,7 +195,7 @@ Tidak ada halaman galat bawaan yang tampil ke pengguna.
 
 - **Statis**: `404.astro` -> `dist/404.html`, `50x.astro` -> `dist/50x/index.html` (Astro memakai
   format direktori, bukan `50x.html`). Keduanya memakai `Base`, tanpa `boot.ts` (hanya `site.ts`:
-  header, tema, kolom cari), jalan tanpa JS (tautan biasa; "Coba lagi" di 50x adalah `<a href="">`).
+  header, kolom cari), jalan tanpa JS (tautan biasa; "Coba lagi" di 50x adalah `<a href="">`).
   `nginx.conf`: `error_page 403 404 /404.html` dan `error_page 500 502 503 504 /50x/index.html`,
   lokasi `internal`, `server_tokens off`. Cloudflare Pages melayani `404.html` otomatis.
 - **Di aplikasi**: `ApiError.kind` (`notfound` 404/410, `timeout` 408/504/AbortSignal,
@@ -187,8 +218,8 @@ npm test    # node --experimental-strip-types --test "tests/*.test.ts"
 ```
 
 Node polos, tanpa dependensi tambahan (Node >= 22.12; mulai 22.18 flag-nya tidak diperlukan).
-Berkas yang diuji (`library.ts`, `views.ts`, `routes.ts`, `api.ts`, `errorview.ts`, `images.ts`,
-`readerlogic.ts`, `readerview.ts`)
+Berkas yang diuji (`library.ts`, `views.ts`, `homeview.ts`, `routes.ts`, `api.ts`, `errorview.ts`,
+`images.ts`, `readerlogic.ts`, `readerview.ts`)
 hanya memakai sintaks TypeScript yang bisa di-strip (tanpa enum/parameter property) dan
 import relatif dengan ekstensi `.ts` di modul yang diimpor tes. `tests/` dikecualikan dari
 `tsconfig.json` (tanpa `@types/node`); cek tipe: `tsc --noEmit -p .`.

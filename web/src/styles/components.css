@@ -1,0 +1,406 @@
+/* Komponen bersama: ikon, tombol, chip, pil, panel, lencana, kerangka (skeleton), spinner. */
+
+.ic {
+	flex: none;
+	width: 20px;
+	height: 20px;
+}
+
+/* ------------------------------------------------------------- tombol */
+
+/* Bentuk dasar = tombol filter Asura: latar panel, garis #3d3655, teks #CFD9E9. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 44px;
+	padding: 0 16px;
+	border: 1px solid var(--ctl-border);
+	border-radius: var(--radius);
+	background: var(--panel);
+	color: var(--ctl-text);
+	font-size: 14px;
+	font-weight: 500;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background-color var(--dur) var(--ease),
+		border-color var(--dur) var(--ease),
+		color var(--dur) var(--ease),
+		filter var(--dur) var(--ease);
+}
+.btn:hover {
+	background-color: var(--ctl-hover);
+	color: #fff;
+}
+.btn .ic {
+	width: 18px;
+	height: 18px;
+}
+.btn .lbl {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.btn-primary {
+	border-color: transparent;
+	background: var(--grad-accent);
+	color: #fff;
+}
+.btn-primary:hover {
+	background-color: transparent;
+	filter: brightness(1.12);
+}
+.btn-ghost {
+	background: transparent;
+}
+.btn-sm {
+	min-height: 40px;
+	padding: 0 12px;
+}
+.btn-lg {
+	min-height: 52px;
+	padding: 0 20px;
+	font-size: 16px;
+	font-weight: 600;
+}
+.btn.is-disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+	background: var(--subtle);
+}
+.btn.is-disabled:hover {
+	background-color: var(--subtle);
+	color: var(--ctl-text);
+}
+.btn.is-pending {
+	color: transparent;
+	border-color: transparent;
+	background: var(--subtle);
+}
+
+.icon-btn {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border: 1px solid var(--ctl-border);
+	border-radius: var(--radius);
+	background: var(--subtle);
+	color: var(--ctl-text);
+	cursor: pointer;
+	transition: background-color var(--dur) var(--ease);
+}
+.icon-btn:hover {
+	background: var(--ctl-hover);
+	color: #fff;
+}
+
+/* ------------------------------------------------------- chip & pil */
+
+.chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.chips-toggle {
+	margin-top: 12px;
+}
+.chip {
+	display: inline-flex;
+	align-items: center;
+	min-height: 40px;
+	padding: 0 14px;
+	border: 1px solid var(--ctl-border);
+	border-radius: var(--radius);
+	background: var(--panel);
+	color: var(--ctl-text);
+	font-size: 14px;
+	font-weight: 500;
+	text-decoration: none;
+	transition: background-color var(--dur) var(--ease);
+}
+.chip:hover {
+	background: var(--ctl-hover);
+	color: #fff;
+}
+.chip-sm {
+	padding: 0 12px;
+	font-size: 13px;
+}
+.chip-strong {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}
+.chip-strong:hover {
+	background: var(--accent-dark);
+}
+/* chip di dalam panel: latar sedikit lebih gelap agar terpisah dari panelnya */
+.panel .chip {
+	background: var(--inner);
+}
+.panel .chip:hover {
+	background: var(--ctl-hover);
+}
+
+/* Label/jumlah: tint ungu. `.pill-link` = tautan penuh ungu ("Semua", "Lihat semua"). */
+.pill {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	min-height: 28px;
+	padding: 0 12px;
+	border-radius: var(--radius);
+	background: var(--accent-tint);
+	color: var(--accent-soft);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1;
+	text-decoration: none;
+}
+.pill-link {
+	min-height: 36px;
+	background: var(--accent);
+	color: #fff;
+	transition: background-color var(--dur) var(--ease);
+}
+.pill-link::after {
+	content: "";
+	position: absolute;
+	inset: -2px 0; /* area sentuh >= 40px */
+}
+.pill-link:hover {
+	background: var(--accent-dark);
+}
+
+/* ------------------------------------------------------------- panel */
+
+.panel {
+	padding: 20px;
+	border-radius: var(--radius);
+	background: var(--panel);
+}
+@media (min-width: 768px) {
+	.panel {
+		padding: 24px;
+	}
+}
+.panel-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 12px;
+	margin-bottom: 16px;
+}
+.panel-ic {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 32px;
+	height: 32px;
+	border-radius: var(--radius);
+	background: var(--accent);
+	color: #fff;
+}
+.panel-ic .ic {
+	width: 18px;
+	height: 18px;
+}
+.panel-head h2 {
+	margin-right: auto;
+	font-size: 20px;
+	font-weight: 600;
+}
+
+.empty {
+	margin: 8px 0;
+	padding: 28px 16px;
+	text-align: center;
+	color: var(--muted);
+	background: var(--panel);
+	border: 1px dashed var(--ctl-border);
+	border-radius: var(--radius);
+}
+.panel .empty {
+	background: var(--inner);
+}
+.empty p {
+	margin: 0;
+}
+.empty .btn {
+	margin-top: 14px;
+}
+
+/* ----------------------------------------------------------- lencana */
+
+.dot {
+	display: inline-block;
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--muted);
+}
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 8px;
+	border-radius: var(--r-sm);
+	background: rgba(0, 0, 0, 0.7);
+	-webkit-backdrop-filter: blur(4px);
+	backdrop-filter: blur(4px);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+.badge-manga .dot {
+	background: var(--dot-manga);
+}
+.badge-manhwa .dot {
+	background: var(--dot-manhwa);
+}
+.badge-manhua .dot {
+	background: var(--dot-manhua);
+}
+/* di sampul: chip melayang di pojok kanan atas */
+.cover .badge {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+}
+
+/* Lencana jumlah bookmark pada tombol Pustaka (tersembunyi lewat [hidden] bila 0) */
+.nav-badge {
+	display: inline-grid;
+	place-items: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0 6px;
+	border-radius: 999px;
+	background: #fff;
+	color: var(--accent-dark);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+/* ------------------------------------------------- kerangka & spinner */
+
+.sk {
+	display: block;
+	border-radius: var(--r-sm);
+	background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 37%, rgba(255, 255, 255, 0.05) 63%);
+	background-size: 400% 100%;
+	animation: sk-shimmer 1.4s ease infinite;
+}
+@keyframes sk-shimmer {
+	0% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0 50%;
+	}
+}
+.sk-card {
+	display: block;
+	overflow: hidden;
+	padding-bottom: 12px;
+	border-radius: var(--radius);
+	background: var(--panel);
+}
+.sk-card .sk-cover {
+	border-radius: 0;
+}
+.sk-card .sk-line,
+.sk-card .sk-btn-block {
+	margin-inline: 12px;
+}
+.sk-cover {
+	aspect-ratio: 3 / 4;
+	width: 100%;
+}
+.sk-line {
+	height: 12px;
+	margin-top: 12px;
+}
+.sk-line.s {
+	width: 60%;
+}
+.sk-btn-block {
+	height: 40px;
+	margin-top: 12px;
+}
+.sk-title {
+	width: min(60%, 320px);
+	height: 28px;
+}
+.sk-chip {
+	width: 84px;
+	height: 40px;
+	border-radius: var(--radius);
+}
+.sk-btn {
+	width: 150px;
+	height: 44px;
+	border-radius: var(--radius);
+}
+.sk-btn-lg {
+	height: 52px;
+	border-radius: var(--radius);
+}
+.sk-block {
+	height: 150px;
+	margin-top: 16px;
+}
+.sk-row {
+	height: 56px;
+	margin: 1px 0;
+	border-radius: 0;
+}
+.sk-page {
+	aspect-ratio: 2 / 3;
+	width: 100%;
+	border-radius: 0;
+}
+.sk-rowcard {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	padding: 12px 0;
+}
+.sk-thumb {
+	flex: none;
+	width: 64px;
+	aspect-ratio: 3 / 4;
+}
+.sk-lines {
+	display: block;
+	flex: 1;
+	min-width: 0;
+}
+.sk-lines .sk-line:first-child {
+	margin-top: 4px;
+}
+
+.feed-spinner {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	border: 2px solid rgba(255, 255, 255, 0.15);
+	border-top-color: var(--accent-soft);
+	border-radius: 50%;
+	animation: feed-spin 0.8s linear infinite;
+}
+@keyframes feed-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

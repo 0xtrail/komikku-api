@@ -330,6 +330,13 @@ test('readerHeadHtml: tebakan manga (pending) tidak ditautkan tapi ruangnya dita
   assert.ok(none.includes('data-autonext-toggle'), 'sakelar tetap ada');
 });
 
+test('readerHeadHtml: tombol kembali berikon ber-aria-label, nama manga di atas nama chapter', () => {
+  const html = V.readerHeadHtml(ready());
+  assert.ok(/<a class="reader-back" href="\/manga\/alone-leveling-ragnarok\/" aria-label="Kembali ke Alone Leveling: Ragnarok">/.test(html));
+  assert.ok(html.includes('<span class="reader-manga">Alone Leveling: Ragnarok</span><h1 class="reader-title">Chapter 66</h1>'));
+  assert.ok(!V.readerHeadHtml(ready({ mangaTitle: undefined })).includes('reader-manga'));
+});
+
 test('readerNavHtml: top/end/fixed; fixed membawa nama chapter + penunjuk halaman; none = kosong', () => {
   const top = V.readerNavHtml(ready(), 'top');
   assert.ok(top.includes('rel="prev"') && top.includes('href="/chapter/solo-leveling-ragnarok-chapter-65/"'));
@@ -349,6 +356,15 @@ test('readerNavHtml: "Ini chapter terbaru" hanya di akhir, hanya bila pasti terb
   assert.ok(!V.readerNavHtml(ready({ next: undefined, latest: false }), 'end').includes('Ini chapter terbaru'));
   assert.ok(!V.readerNavHtml(ready({ latest: true }), 'end').includes('Ini chapter terbaru'), 'ada next: bukan terbaru');
   assert.ok(V.readerNavHtml(latest, 'end').includes('is-disabled'), 'tombol berikutnya nonaktif');
+});
+
+test('readerNavHtml end: panel "Kamu sudah sampai akhir" + tombol berikutnya ungu + Info manga; sampul bila ada', () => {
+  const html = V.readerNavHtml(ready({ cover: 'https://img/c.jpg' }), 'end');
+  assert.ok(html.includes('class="end-panel"') && html.includes('Kamu sudah sampai akhir'));
+  assert.ok(html.includes('<span class="cover end-cover"><img src="https://img/c.jpg" alt=""'), 'sampul dekoratif');
+  assert.ok(/<a class="btn btn-primary" rel="next"/.test(html), 'berikutnya = tombol ungu');
+  assert.ok(/class="btn btn-ghost reader-home" href="\/manga\/alone-leveling-ragnarok\/">Info manga</.test(html));
+  assert.ok(!V.readerNavHtml(ready(), 'end').includes('end-cover'), 'tanpa sampul: tanpa gambar');
 });
 
 test('chapterSectionHtml: hook stabil, src hanya untuk gambar awal, data-src untuk sisanya, tanpa id ganda', () => {
@@ -377,6 +393,7 @@ test('chapterSectionHtml: lompat ke halaman N memberi prioritas tinggi ke halama
 test('chapterSectionHtml: pembatas chapter berikutnya dan chapter tanpa gambar', () => {
   const html = V.chapterSectionHtml({ slug: 'x-chapter-2', name: 'Chapter 2', images: ['https://i/1.jpg'], eager: new Set([0]), divider: true });
   assert.ok(html.includes('<div class="chapter-divider"><span class="chapter-divider-name">Chapter 2</span>'));
+  assert.ok(html.includes('<span class="chapter-divider-cap" aria-hidden="true">Chapter berikutnya</span>'));
   assert.ok(html.includes('class="chapter-divider-link" href="/chapter/x-chapter-2/"'));
   const empty = V.chapterSectionHtml({ slug: 'x-chapter-3', name: 'Chapter 3', images: [], eager: new Set() });
   assert.ok(empty.includes('Chapter ini belum memiliki halaman.'));

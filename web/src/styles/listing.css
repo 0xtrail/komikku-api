@@ -1,0 +1,154 @@
+/* Halaman daftar (Daftar Komik, Populer, Terbaru, Genre, Cari, Pustaka): panel kepala + filter + status feed. */
+
+.filter-panel {
+	position: relative;
+	margin-bottom: 20px;
+	padding: 20px 16px;
+	border-radius: var(--radius);
+	background: var(--grad-filter);
+}
+@media (min-width: 768px) {
+	.filter-panel {
+		padding: 24px;
+	}
+}
+.ph-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+}
+.page-head h1 {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+.ph-sub {
+	margin: 10px 0 0;
+	color: rgba(255, 255, 255, 0.72);
+	font-size: 14px;
+}
+.page-head .sk-title {
+	background: rgba(255, 255, 255, 0.12);
+}
+
+/* tombol filter: tab jenis + Genre (tinggi 44px) */
+.filter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 20px;
+}
+.seg {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.seg-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid var(--ctl-border);
+	border-radius: var(--radius);
+	background: var(--panel);
+	color: var(--ctl-text);
+	font-size: 15px;
+	font-weight: 500;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		background-color var(--dur) var(--ease),
+		border-color var(--dur) var(--ease);
+}
+.seg-item .ic {
+	width: 18px;
+	height: 18px;
+	opacity: 0.85;
+}
+.seg-item .chev {
+	width: 16px;
+	height: 16px;
+	margin-left: -2px;
+	transition: transform var(--dur) var(--ease);
+}
+.seg-item:hover {
+	background: var(--ctl-hover);
+	color: #fff;
+}
+.seg-item[aria-current="page"],
+.seg-genre[aria-expanded="true"] {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}
+.seg-genre[aria-expanded="true"] .chev {
+	transform: rotate(180deg);
+}
+
+/* popover genre: di bawah panel kepala, selebar panel */
+.pop-panel {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: calc(100% + 6px);
+	z-index: 45;
+	max-height: min(60vh, 420px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 16px;
+	background: var(--panel);
+	border: 1px solid var(--ctl-border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow-pop);
+}
+.pop-panel .chip {
+	background: var(--inner);
+}
+.pop-panel .chip:hover {
+	background: var(--ctl-hover);
+}
+.pop-note {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 8px;
+	color: var(--muted);
+	font-size: 14px;
+}
+
+/* Status di bawah grid daftar tanpa akhir: sekaligus sentinel scroll. Tinggi minimum
+   tetap, jadi pergantian memuat / tombol / akhir tidak menggeser apa pun. */
+.feed-status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 10px 14px;
+	min-height: 88px;
+	margin-top: 24px;
+	color: var(--muted);
+	font-size: 14px;
+	font-weight: 500;
+	text-align: center;
+}
+.feed-status p {
+	margin: 0;
+}
+.feed-status [data-feed-more] {
+	min-height: 44px;
+	padding: 0 24px;
+	border-color: transparent;
+	background: var(--grad-accent);
+	color: #fff;
+	font-weight: 600;
+}
+.feed-status [data-feed-more]:hover {
+	background-color: transparent;
+	filter: brightness(1.12);
+}
+.feed-status .err {
+	width: 100%;
+	margin: 0;
+}

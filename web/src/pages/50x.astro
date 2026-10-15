@@ -6,7 +6,7 @@ import Base from '../layouts/Base.astro';
 import { serverErrorPageHtml } from '../lib/errorview';
 ---
 <Base title="Layanan sedang tidak tersedia — Panel" description="Panel sedang mengalami gangguan." view="error" noindex>
-	<Fragment set:html={serverErrorPageHtml()} />
+	<div class="wrap"><Fragment set:html={serverErrorPageHtml()} /></div>
 </Base>
 <script>
 	import '../lib/site';
