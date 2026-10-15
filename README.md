@@ -306,9 +306,23 @@ inside a paragraph is collapsed, and it is an empty string when the comic has no
             "https://cdn.komiku.co.id/wp-content/uploads/85998-34.jpg",
             "https://cdn.komiku.co.id/wp-content/uploads/85998-35.jpg",
             "https://cdn.komiku.co.id/wp-content/uploads/85998-36.jpg"
-        ]
+        ],
+        "manga_endpoint": "/manga/hack-g-u/",
+        "manga_title": ".hack//G.U.+",
+        "prev_endpoint": "/hack-g-u-chapter-5/",
+        "next_endpoint": ""
     },
     "message": "Get Chapter Detail",
     "code": 200
 }
    ```
+
+`manga_endpoint` and `manga_title` name the series the chapter belongs to, and `prev_endpoint` and
+`next_endpoint` are the neighbouring chapters, all read from the chapter page itself. Use them instead of
+guessing from the chapter slug: the series slug is not the chapter slug without `-chapter-N`
+(`solo-leveling-ragnarok-chapter-66` belongs to `/manga/alone-leveling-ragnarok/`, `one-piece-chapter-1196`
+to `/manga/komik-one-piece-indo/`) and chapter numbers are not always consecutive integers (the first
+chapter of that series is `solo-leveling-ragnarok-chapter-00-1`). The endpoints are site-relative with a
+leading and trailing slash (`/manga/<slug>/`, `/<slug>-chapter-N/`), the same form as the `chapter_list`
+of Get Comic Info. `prev_endpoint` is an empty string on the first chapter and `next_endpoint` on the latest
+one; that is normal, not an error. `title` and `image` are unchanged.

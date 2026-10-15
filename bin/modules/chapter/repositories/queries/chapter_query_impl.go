@@ -84,6 +84,9 @@ func (c ChapterQueryImpl) DetailChapter(endpoint string) utils.Result {
 			chapter.Title = strings.Join(strings.Fields(e.Text), " ")
 		}
 	})
+	collector.OnHTML("html", func(e *colly.HTMLElement) {
+		applyChapterNav(e, &chapter)
+	})
 	err := collector.Visit(c.URL)
 	if err != nil {
 		output = utils.Result{
