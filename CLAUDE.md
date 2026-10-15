@@ -106,7 +106,7 @@ as `manga/<slug>/` or `/manga/<slug>/`). Verified live state of the upstream:
 | all / filter | `komiku.org/daftar-komik/` (`?tipe=manga\|manhwa\|manhua`, `?halaman=N`) | `article.manga-card`, `h4`, `a[href]`, `img[data-src]` (src is a lazy placeholder), `p.meta` |
 | info | `komiku.org/manga/<slug>/` | `table.inftable` rows matched by label, `ul.genre li.genre`, `div.ims img[src]`, synopsis in `p.desc` (fallback: first `p` of the hidden `section#Sinopsis`) |
 | chapter list | same page, `tbody._3Rsjq` rows with `td.judulseries a` | chapter href is `/<slug>-chapter-N/`, **not** `/ch/...`; the header row only has `th.judulseries` |
-| chapter detail | `komiku.org/<slug>-chapter-N/` | `#Baca_Komik img.klazy[src]`, `#Judul h1` (ids, not `section`/`header`) |
+| chapter detail | `komiku.org/<slug>-chapter-N/` | `#Baca_Komik img.klazy[src]`, `#Judul h1` (ids, not `section`/`header`); series and neighbours from `a[aria-label=List\|Prev\|Next]` (see below) |
 | genre list | `komiku.org/p/daftar-genre/` | `a.gnr` with `<b>` title and `/genre/<slug>/` href |
 | search | `api.komiku.org/?post_type=manga&s=<q>` | `div.bge` |
 | popular | `api.komiku.org/other/hot/` (`page/N/`) | `div.bge` |
@@ -155,6 +155,24 @@ first non-empty text is kept. Inside the callback read `e.DOM.Text()`, not `e.Te
 collapses whitespace inside a paragraph and joins paragraphs with exactly `"\n\n"`. The tests in this
 package need env vars because `config.init()` panics without them:
 `PORT=0 BASE_URL=https://komiku.org/ go test ./bin/modules/manga/...`.
+
+`ChapterDetail` also carries `manga_endpoint`, `manga_title`, `prev_endpoint` and `next_endpoint` (additive,
+`title` and `image` unchanged; empty string when absent, never an error). `applyChapterNav`
+(`chapter/repositories/queries/chapter_nav.go`, one `OnHTML("html")` callback) reads them from the chapter
+page itself, because the series slug cannot be derived from the chapter slug
+(`solo-leveling-ragnarok-chapter-66` is in `/manga/alone-leveling-ragnarok/`, `one-piece-chapter-1196` in
+`/manga/komik-one-piece-indo/`) and neighbours cannot be computed by arithmetic (the first chapter of that
+series is `-chapter-00-1`). The first valid candidate wins: series = `a[aria-label="List"][rel="tag"]` href,
+else `span[itemprop=isPartOf] meta[itemprop=url]`; title = `span[itemprop=isPartOf] meta[itemprop=name]`
+(it must be scoped: the page has chapter, author and publisher names under the same itemprop), else the List
+link's `title`; prev = `a[aria-label="Prev"]`; next = `a[aria-label="Next"]`, else `div.nextch[data]`. The
+bar appears twice (top and bottom) and the first is used. Only the path of a href is kept, so absolute and
+relative hrefs behave the same, and a value is accepted only if it is a site path: `/manga/<slug>/` (exactly
+two segments) or `/<slug>-chapter-<n>/` (exactly one segment containing `-chapter-`, which keeps a series page
+like `/manga/re-zero-alternative-chapter-one-shot/` from passing for a chapter); both are returned with a
+leading and trailing slash. The first chapter has no Prev link; the latest has no Next link and no
+`div.nextch`, so those two come back empty. These helpers live in the chapter package (its own copy of the
+path normalisation) to avoid importing the manga queries.
 
 `GetAllGenre` takes the genre slug from the `/genre/<slug>/` **href**, not from `data-nama`:
 `data-nama` is a display name for about 20 genres (`dark fantasy`, `shoujo(g)`, `girls&#039; love`) and
