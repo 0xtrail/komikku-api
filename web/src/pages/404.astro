@@ -1,0 +1,14 @@
+---
+// Halaman 404 (dist/404.html): dilayani nginx lewat `error_page 404 /404.html` untuk URL apa pun yang
+// tak dikenal, dan oleh Cloudflare Pages otomatis. Markup sama dengan `mountUnknown` di klien (errorview.ts).
+// Sengaja TANPA boot.ts: tak ada routing/pengambilan data di sini, hanya halaman statis yang tetap
+// berfungsi dengan JS mati (tautan biasa + form cari). `data-view="error"` menjaga tab bar & header seragam.
+import Base from '../layouts/Base.astro';
+import { notFoundPageHtml } from '../lib/errorview';
+---
+<Base title="Halaman tidak ditemukan — Panel" description="Halaman yang kamu cari tidak ada." view="error" noindex>
+	<Fragment set:html={notFoundPageHtml()} />
+</Base>
+<script>
+	import '../lib/site';
+</script>

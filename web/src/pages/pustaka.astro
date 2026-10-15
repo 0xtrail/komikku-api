@@ -1,0 +1,11 @@
+---
+// Shell Pustaka (bookmark & riwayat baca). Datanya ada di localStorage browser, jadi seluruh
+// isi dirender client-side (boot.ts -> mountLibrary); `?tab=` juga tidak bisa dibaca di server.
+import Base from '../layouts/Base.astro';
+---
+<Base title="Pustaka — Panel" description="Bookmark dan riwayat bacaanmu, tersimpan di browser ini.">
+	<div id="app" aria-busy="true"><span class="sr-only">Sedang memuat konten</span></div>
+</Base>
+<script>
+	import '../lib/boot';
+</script>

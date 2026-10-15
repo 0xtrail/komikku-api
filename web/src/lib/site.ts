@@ -1,8 +1,13 @@
 /**
- * Perilaku header yang dipakai di setiap halaman: tombol tema, penanda menu
- * aktif, isi kolom cari, dan prefetch.
+ * Perilaku yang dipakai di setiap halaman: tombol tema, penanda menu aktif, sub-menu
+ * Daftar, kolom cari (+ autocomplete), prefetch, tombol/lencana bookmark, dan gambar gagal muat.
  */
+import { initBookmarks } from './bookmarks';
+import { initImageFallback } from './images';
+import { initNavMenu } from './navmenu';
 import { initPrefetch } from './prefetch';
+import { parseRoute } from './routes';
+import { initSuggest } from './suggest';
 
 const root = document.documentElement;
 const dark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -29,9 +34,16 @@ toggle?.addEventListener('click', () => {
 // Menu aktif ditentukan dari data-view (diset skrip inline di <head>).
 const view = root.dataset.view;
 const active = view === 'chapter' || view === 'manga' || view === 'search' ? undefined : view;
-document.querySelectorAll<HTMLAnchorElement>('a[data-nav]').forEach((a) => {
+// Selector tanpa `a`: pemicu sub-menu Daftar adalah <button>.
+document.querySelectorAll<HTMLElement>('[data-nav]').forEach((a) => {
   if (a.dataset.nav === active) a.setAttribute('aria-current', 'page');
 });
+
+// Sub-menu Daftar: tandai jenis yang sedang dibuka.
+const here = parseRoute(new URL(location.href));
+if (here.kind === 'list') {
+  document.querySelector(`[data-menu-list] a[data-tipe="${here.tipe}"]`)?.setAttribute('aria-current', 'page');
+}
 
 // Kolom cari terisi dengan kata kunci saat ini.
 if (view === 'search') {
@@ -40,4 +52,8 @@ if (view === 'search') {
   if (input && q) input.value = q;
 }
 
+initNavMenu();
+initSuggest();
 initPrefetch();
+initBookmarks();
+initImageFallback();
