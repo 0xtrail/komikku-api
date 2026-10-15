@@ -1,0 +1,11 @@
+---
+// Shell Daftar Komik. `daftar/index.html` statis di-generate sekali saat build, jadi `?tipe=` dan
+// `?page=` TIDAK bisa dibaca di server — judul, tab jenis, dan grid dirender client-side (boot.ts).
+import Base from '../layouts/Base.astro';
+---
+<Base title="Daftar Komik — Panel" description="Telusuri seluruh judul manga, manhwa, dan manhua dalam satu daftar.">
+	<div id="app" aria-busy="true"><span class="sr-only">Sedang memuat konten</span></div>
+</Base>
+<script>
+	import '../lib/boot';
+</script>

@@ -33,22 +33,109 @@ tersedia di bundle browser.
 ```
 src/pages/index.astro      beranda — di-prerender saat build (Populer, Rekomendasi, Terbaru, Genre)
 src/pages/search.astro     shell pencarian — hasil diambil client-side
+src/pages/daftar.astro     shell Daftar Komik (?tipe=manga|manhwa|manhua, ?page=) — scroll tanpa akhir
+src/pages/pustaka.astro    shell Pustaka (?tab=riwayat|bookmark) — data dari localStorage
 src/pages/view.astro       shell untuk /manga/*, /chapter/*, /genre/*, /populer/*, /terbaru/*
+src/pages/404.astro        halaman 404 bermerek (dist/404.html) — statis, tanpa boot.ts
+src/pages/50x.astro        halaman galat server bermerek (dist/50x/index.html) — statis, tanpa boot.ts
 src/layouts/Base.astro     <head>, tema, header, <main>, tab bar bawah
-src/components/            Nav.astro (header), TabBar.astro (navigasi bawah ponsel)
+src/components/            Nav.astro (header + sub-menu Daftar + kotak saran), TabBar.astro (navigasi bawah ponsel)
 src/lib/api.ts             satu-satunya modul pemanggil API + cache (memori + sessionStorage)
 src/lib/routes.ts          URL halaman -> rute -> path API (dipakai boot & prefetch)
 src/lib/views.ts           template HTML (string) — dipakai build time DAN browser
-src/lib/client.ts          render halaman dari cache/skeleton, hidrasi beranda
+src/lib/client.ts          render halaman dari cache/skeleton, feed tanpa akhir, reader, hidrasi beranda
+src/lib/detail.ts          halaman detail manga: sinopsis, Simpan, Lanjutkan, tanda chapter terbaca
+src/lib/library.ts         pustaka di localStorage: bookmark, riwayat, posisi baca, ekspor/impor, event `library:change`
+src/lib/bookmarks.ts       tombol bookmark `[data-bm]` di kartu/detail + lencana `[data-bm-count]` (satu pendengar klik)
+src/lib/errorview.ts       markup keadaan galat (string murni): dipakai 404.astro, 50x.astro, dan aplikasi
+src/lib/errorstate.ts      perilaku keadaan galat: tombol Coba lagi, ulang otomatis saat kembali online
+src/lib/images.ts          gambar gagal dimuat: placeholder sampul + tombol "Coba lagi" untuk halaman reader
+src/lib/pustaka.ts         UI pustaka: halaman /pustaka/ dan baris "Lanjutkan Membaca" di beranda
+src/lib/suggest.ts         autocomplete kolom cari (combobox ARIA)
+src/lib/navmenu.ts         sub-menu Daftar di header desktop (disclosure)
+src/lib/page.ts            pembantu kecil bersama (judul dokumen, elemen #app)
 src/lib/prefetch.ts        prefetch (IntersectionObserver, sentuh, hover) dengan antrean terbatas
 src/lib/boot.ts            dispatcher: memilih halaman dari URL
 src/lib/site.ts            perilaku header: tema, menu aktif, cari
 public/_redirects          rewrite 200 ke /view/index.html (Cloudflare Pages)
-nginx.conf                 rewrite yang sama untuk image Docker
+nginx.conf                 rewrite yang sama untuk image Docker + halaman galat bermerek
+tests/                     tes Node polos (`npm test`): library, views/escape, jenis galat
 ```
 
 Prefix rute dinamis (`manga|chapter|genre|populer|terbaru`) harus sama di
-`nginx.conf` (regex `location ~ ^/(...)/`) dan `public/_redirects`.
+`nginx.conf` (regex `location ~ ^/(...)/`) dan `public/_redirects`. `/daftar/` dan
+`/pustaka/` hanya butuh query string, jadi mereka file nyata seperti `/search/` dan
+tidak perlu aturan rewrite.
+
+### Pustaka (localStorage)
+
+`library.ts` menyimpan semuanya di satu kunci, `mr:lib:v1`:
+`{ v: 1, bookmarks: {<slug>: ...}, progress: {<slug>: ...} }`, slug = slug manga di
+`/manga/<slug>/`. `progress` memuat chapter terakhir, indeks halaman (0-based) +
+`offset` (0..1) di dalamnya, dan daftar slug chapter yang sudah dibuka (`read`).
+Batas: 300 riwayat (yang tertua dibuang), 2000 chapter per manga. Salinan kerja ada
+di memori; storage dibaca ulang hanya saat event `storage` (tab lain) atau saat
+halaman dipulihkan dari bfcache. Bila storage melempar/tidak ada, data tetap hidup
+di memori untuk sesi itu; JSON rusak dicadangkan sekali ke `mr:lib:v1:corrupt` lalu
+pustaka mulai kosong. `views.ts` hanya mengimpor TIPE dari modul ini (ia dijalankan
+juga di Node saat build), jadi data pustaka selalu dioper sebagai parameter template.
+
+Halaman Pustaka punya ekspor (`panel-pustaka-YYYY-MM-DD.json`) dan impor; impor
+menggabungkan (bookmark: gabungan; riwayat: `updatedAt` terbaru menang, `read`
+disatukan) dan menolak berkas yang bentuknya salah tanpa mengubah apa pun.
+
+### Bookmark di kartu dan lencana (hook untuk restyle)
+
+Setiap kartu di grid/baris Populer/feed adalah `<li class="has-bm">` berisi tautan kartu
+**dan**, sebagai saudaranya (bukan anak `<a>`), tombol
+`<button type="button" class="card-bm" data-bm="<slug>" data-title data-cover data-type
+aria-pressed="true|false" aria-label="Simpan <judul>">` dengan ikon dan `span.bm-label`
+("Simpan"/"Tersimpan", disembunyikan secara visual di kartu). Tombol Simpan di halaman
+detail memakai atribut yang sama (`data-bm`, selain `data-bookmark` lama). Satu pendengar
+klik di `document` (`bookmarks.ts`) menyimpan/menghapus dan tidak pernah menavigasi.
+`syncBookmarkButtons(root = document)` menyetel `aria-pressed` + `.bm-label` dari pustaka;
+dipanggil setelah setiap render dan otomatis saat `library:change`.
+`[data-bm-count]` (di tautan Pustaka header dan tab bar) berisi jumlah bookmark dan
+`hidden` bila 0 (`syncBookmarkCount()`).
+
+`library.ts` menembakkan `CustomEvent('library:change', { detail: { kind } })` di
+`window` untuk setiap perubahan lokal: `kind` = `bookmark` | `progress` | `clear` | `import`
+(`import` juga dipakai untuk perubahan dari tab lain dan pemulihan bfcache). `subscribe(fn)`
+tetap ada dan menerima `kind` yang sama.
+
+### Halaman dan keadaan galat
+
+Tidak ada halaman galat bawaan yang tampil ke pengguna.
+
+- **Statis**: `404.astro` -> `dist/404.html`, `50x.astro` -> `dist/50x/index.html` (Astro memakai
+  format direktori, bukan `50x.html`). Keduanya memakai `Base`, tanpa `boot.ts` (hanya `site.ts`:
+  header, tema, kolom cari), jalan tanpa JS (tautan biasa; "Coba lagi" di 50x adalah `<a href="">`).
+  `nginx.conf`: `error_page 403 404 /404.html` dan `error_page 500 502 503 504 /50x/index.html`,
+  lokasi `internal`, `server_tokens off`. Cloudflare Pages melayani `404.html` otomatis.
+- **Di aplikasi**: `ApiError.kind` (`notfound` 404/410, `timeout` 408/504/AbortSignal,
+  `offline` fetch gagal saat `navigator.onLine === false`, `server` sisanya, `unknown` bila
+  bukan ApiError) menentukan teks; pesan mentah API/Go atau "HTTP 503" tidak pernah tampil.
+  Fetch yang ditolak saat browser online (API mati/DNS/CORS) dihitung `server`, bukan `offline`.
+  Markup: `[data-error-state][data-error-kind="notfound|server|timeout|offline|unknown"]`,
+  tombol `[data-retry]`; jenis `offline` mengulang otomatis saat event `online`. Varian
+  `.err--page` (halaman penuh) dan `.err--compact` (section beranda, status feed). `mountUnknown`
+  memakai markup yang sama dengan `404.html`.
+- **Gambar rusak** (`images.ts`, satu pendengar di fase capture): sampul -> `.cover.is-broken` +
+  `.cover-ph[data-img-fallback]` berinisial judul; halaman reader (`img.page`, `alt="Halaman N"`) ->
+  `img.is-broken[data-broken]` + `button.page-retry[data-img-retry]` "Halaman N gagal dimuat · Coba
+  lagi" yang memasang ulang `src`. Reader cukup mempertahankan `class="page"` dan `alt`.
+
+### Tes
+
+```sh
+npm test    # node --experimental-strip-types --test "tests/*.test.ts"
+```
+
+Node polos, tanpa dependensi tambahan (Node >= 22.12; mulai 22.18 flag-nya tidak diperlukan).
+Berkas yang diuji (`library.ts`, `views.ts`, `routes.ts`, `api.ts`, `errorview.ts`, `images.ts`)
+hanya memakai sintaks TypeScript yang bisa di-strip (tanpa enum/parameter property) dan
+import relatif dengan ekstensi `.ts` di modul yang diimpor tes. `tests/` dikecualikan dari
+`tsconfig.json` (tanpa `@types/node`); cek tipe: `tsc --noEmit -p .`.
 
 ### Kenapa halaman detail di-render di browser
 

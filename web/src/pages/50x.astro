@@ -1,0 +1,13 @@
+---
+// Halaman galat server (dist/50x/index.html — Astro memakai format direktori, bukan 50x.html):
+// nginx melayaninya lewat `error_page 500 502 503 504 /50x/index.html`. Tombol "Coba lagi" berupa
+// tautan ke URL yang sama (`href=""`), jadi jalan tanpa JS. Tanpa boot.ts (tak ada pengambilan data).
+import Base from '../layouts/Base.astro';
+import { serverErrorPageHtml } from '../lib/errorview';
+---
+<Base title="Layanan sedang tidak tersedia — Panel" description="Panel sedang mengalami gangguan." view="error" noindex>
+	<Fragment set:html={serverErrorPageHtml()} />
+</Base>
+<script>
+	import '../lib/site';
+</script>

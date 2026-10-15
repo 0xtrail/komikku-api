@@ -204,6 +204,7 @@ main.wrap {
 }
 
 .bar {
+	position: relative; /* acuan popup autocomplete di ponsel */
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -231,9 +232,11 @@ main.wrap {
 }
 
 .search {
-	position: relative;
 	flex: 1 1 0;
 	min-width: 0;
+}
+.search-field {
+	position: relative;
 }
 .search input {
 	width: 100%;
@@ -314,22 +317,69 @@ main.wrap {
 	display: none;
 	gap: 2px;
 }
-.primary-nav a {
+.primary-nav a,
+.nav-trigger {
 	display: inline-flex;
 	align-items: center;
+	gap: 4px;
 	min-height: 44px;
 	padding: 0 14px;
+	border: 0;
 	border-radius: 999px;
+	background: transparent;
 	color: var(--muted);
 	font-weight: 700;
 	font-size: 0.92rem;
 	text-decoration: none;
+	cursor: pointer;
 }
-.primary-nav a:hover {
+.primary-nav a:hover,
+.nav-trigger:hover {
 	color: var(--text);
 	background: var(--surface);
 }
-.primary-nav a[aria-current="page"] {
+.primary-nav a[aria-current="page"],
+.nav-trigger[aria-current="page"] {
+	color: var(--primary);
+	background: var(--primary-soft);
+}
+
+/* Sub-menu Daftar (disclosure): daftar tautan di bawah tombol */
+.nav-drop {
+	position: relative;
+}
+.nav-trigger .chev {
+	width: 16px;
+	height: 16px;
+	transition: transform 0.15s ease;
+}
+.nav-trigger[aria-expanded="true"] .chev {
+	transform: rotate(180deg);
+}
+.nav-menu {
+	position: absolute;
+	top: calc(100% + 6px);
+	left: 0;
+	z-index: 60;
+	min-width: 200px;
+	padding: 6px;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+.primary-nav .nav-menu a {
+	display: flex;
+	width: 100%;
+	padding: 0 12px;
+	border-radius: var(--r-sm);
+	color: var(--text);
+	font-weight: 600;
+}
+.primary-nav .nav-menu a:hover {
+	background: var(--surface);
+}
+.primary-nav .nav-menu a[aria-current="page"] {
 	color: var(--primary);
 	background: var(--primary-soft);
 }
@@ -342,7 +392,7 @@ main.wrap {
 	bottom: 0;
 	z-index: 50;
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(5, 1fr);
 	padding: 0 env(safe-area-inset-right, 0px) var(--safe-b) env(safe-area-inset-left, 0px);
 	background: var(--header-bg);
 	-webkit-backdrop-filter: saturate(1.4) blur(10px);
@@ -389,6 +439,7 @@ html[data-view="chapter"] .tabbar {
 		display: none;
 	}
 	.search {
+		position: relative; /* acuan popup autocomplete di desktop */
 		flex: 0 1 340px;
 		margin-left: auto;
 	}
@@ -410,7 +461,8 @@ html[data-view="chapter"] .tabbar {
 	margin-bottom: 10px;
 }
 .sec-head h2,
-.chapter-head h2 {
+.chapter-head h2,
+.synopsis h2 {
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -789,6 +841,8 @@ html[data-view="chapter"] .tabbar {
 }
 .detail .cta .btn {
 	flex: 1 1 140px;
+	min-width: 0;
+	max-width: 100%;
 }
 .detail h1 {
 	overflow-wrap: anywhere;
@@ -877,6 +931,7 @@ html[data-view="chapter"] .tabbar {
 .chapter-list a {
 	display: flex;
 	align-items: center;
+	gap: 8px;
 	min-height: 44px;
 	padding: 0 14px;
 	color: var(--text);
@@ -1034,27 +1089,229 @@ html[data-view="chapter"] main.wrap {
 	}
 }
 
-/* --------------------------------------------------------------- notices */
+/* ------------------------------------------------------------ keadaan galat */
 
-.notice {
+/* Markup: src/lib/errorview.ts. Halaman penuh (404.html, 50x, galat satu halaman) dan ringkas
+   (section beranda, status feed) memakai kelas yang sama; jenisnya di data-error-kind. */
+.err {
 	display: flex;
 	flex-direction: column;
-	align-items: flex-start;
-	gap: 8px;
-	max-width: 560px;
+	align-items: center;
+	gap: 10px;
+	max-width: 520px;
 	margin: 24px auto;
-	padding: 18px 20px;
-	border: 1px solid var(--danger);
-	border-left-width: 5px;
-	border-radius: var(--radius);
-	background: var(--card);
+	padding: 32px 20px;
+	text-align: center;
 }
-.notice p {
+.err--page {
+	min-height: 52vh;
+	justify-content: center;
+}
+.err-ic {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 72px;
+	height: 72px;
+	border-radius: 20px;
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+.err-ic svg {
+	width: 36px;
+	height: 36px;
+}
+.err[data-error-kind="server"] .err-ic,
+.err[data-error-kind="timeout"] .err-ic,
+.err[data-error-kind="unknown"] .err-ic {
+	background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+	color: var(--danger-ink);
+}
+.err-code {
+	margin: 4px 0 0;
+	font-size: clamp(3rem, 16vw, 5.5rem);
+	font-weight: 900;
+	font-style: italic;
+	line-height: 0.9;
+	letter-spacing: -0.06em;
+	color: var(--primary);
+}
+.err-title {
+	margin: 0;
+	font-size: clamp(1.25rem, 4vw, 1.6rem);
+	font-weight: 800;
+	line-height: 1.2;
+}
+.err-text {
+	margin: 0;
+	max-width: 42ch;
+	color: var(--muted);
+}
+.err-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+	margin-top: 8px;
+}
+.err--compact {
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: center;
+	max-width: none;
+	margin: 12px 0;
+	padding: 14px 16px;
+	text-align: left;
+	border: 1px dashed var(--border);
+	border-radius: var(--radius);
+}
+.err--compact .err-ic {
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+}
+.err--compact .err-ic svg {
+	width: 24px;
+	height: 24px;
+}
+.err--compact .err-body {
+	flex: 1 1 200px;
+	min-width: 0;
+}
+.err--compact .err-title {
+	font-size: 1rem;
+}
+.err--compact .err-text {
+	font-size: 0.9rem;
+}
+.err--compact .err-actions {
 	margin: 0;
 }
-.notice-title {
-	color: var(--danger-ink);
+.feed-status .err {
+	width: 100%;
+	margin: 0;
+}
+
+/* Gambar gagal dimuat: sampul diganti blok berinisial, halaman reader diganti tombol coba lagi (src/lib/images.ts) */
+.cover.is-broken img {
+	display: none;
+}
+.cover-ph {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: linear-gradient(135deg, var(--surface), var(--surface-2));
+	color: var(--muted);
+	font-size: clamp(1.6rem, 8vw, 2.4rem);
+	font-weight: 900;
+	font-style: italic;
+	letter-spacing: -0.04em;
+	user-select: none;
+}
+.page.is-broken {
+	display: none;
+}
+.page-retry {
+	display: grid;
+	place-items: center;
+	width: 100%;
+	min-height: min(60vh, 520px);
+	padding: 24px;
+	border: 0;
+	border-bottom: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	font-weight: 700;
+	text-align: center;
+	cursor: pointer;
+}
+.page-retry:hover {
+	color: var(--primary);
+}
+.page-retry:disabled {
+	color: var(--muted);
+	cursor: progress;
+}
+
+/* Tombol bookmark di kartu: saudara dari <a class="card">, ditumpuk di pojok kanan atas sampul (src/lib/bookmarks.ts) */
+.has-bm {
+	position: relative;
+}
+.card-bm {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: #fff;
+	cursor: pointer;
+}
+.card-bm::before {
+	content: "";
+	position: absolute;
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.7);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+	transition: background-color 0.15s ease;
+}
+.card-bm svg {
+	position: relative;
+	width: 16px;
+	height: 16px;
+	fill: none;
+}
+.card-bm:hover::before {
+	background: var(--primary);
+}
+.card-bm[aria-pressed="true"]::before {
+	background: var(--primary);
+}
+.card-bm[aria-pressed="true"] svg path {
+	fill: currentColor;
+}
+/* Label hanya untuk pembaca layar di kartu (ikon saja secara visual); tombol Simpan di detail menampilkannya. */
+.card-bm .bm-label {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+}
+
+/* Lencana jumlah bookmark pada tautan/tab Pustaka (tersembunyi lewat [hidden] bila 0) */
+.nav-badge {
+	display: inline-grid;
+	place-items: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: var(--primary);
+	color: var(--on-primary);
+	font-size: 0.68rem;
 	font-weight: 800;
+	line-height: 1;
+}
+.tab-ic {
+	position: relative;
+	display: inline-flex;
+}
+.tab-ic .nav-badge {
+	position: absolute;
+	top: -6px;
+	left: calc(100% - 8px);
 }
 
 /* ------------------------------------------------------------- skeletons */
@@ -1131,11 +1388,473 @@ html[data-view="chapter"] main.wrap {
 		animation: none;
 	}
 	.card .cover img,
+	.card-bm::before,
 	.fixbar,
-	.fixbar.is-hidden {
+	.fixbar.is-hidden,
+	.nav-trigger .chev {
 		transition: none;
 	}
 	html {
 		scroll-behavior: auto;
 	}
+}
+
+/* ------------------------------------------------------ autocomplete cari */
+
+/* Ponsel: selebar header (acuan: .bar). Desktop: di bawah kolom cari (lihat media 860px). */
+.suggest {
+	position: absolute;
+	top: calc(100% + 6px);
+	left: var(--pl);
+	right: var(--pr);
+	z-index: 60;
+	max-height: min(70vh, 480px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 6px 0;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+@media (min-width: 860px) {
+	.suggest {
+		left: auto;
+		right: 0;
+		width: min(440px, calc(100vw - 2 * var(--gutter)));
+	}
+}
+.sg-head {
+	padding: 8px 14px 4px;
+	color: var(--muted);
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.sg-opt {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 64px;
+	padding: 4px 14px;
+	color: var(--text);
+	text-decoration: none;
+}
+.sg-opt:hover {
+	background: var(--surface);
+}
+/* opsi aktif (aria-activedescendant): fokus asli tetap di input */
+.sg-opt[aria-selected="true"] {
+	background: var(--primary-soft);
+	box-shadow: inset 3px 0 0 var(--primary);
+}
+.sg-opt:focus-visible {
+	outline-offset: -3px;
+}
+.sg-cover {
+	display: block;
+	flex: none;
+	width: 40px;
+	height: 56px;
+	object-fit: cover;
+	border-radius: 6px;
+	background: var(--surface);
+	box-shadow: 0 0 0 1px var(--border);
+}
+.sg-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 0.92rem;
+	font-weight: 600;
+	line-height: 1.3;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+.suggest mark {
+	background: transparent;
+	color: var(--primary);
+	font-weight: 800;
+}
+.sg-badge {
+	flex: none;
+	padding: 2px 8px;
+	border-radius: 999px;
+	color: #fff;
+	font-size: 0.68rem;
+	font-weight: 800;
+	line-height: 1.5;
+}
+/* warna per tipe dipakai bersama .badge-manga/-manhwa/-manhua; "other" tidak punya kelas di atas */
+.sg-badge.badge-other {
+	background: #374151;
+}
+.sg-all {
+	min-height: 52px;
+	margin-top: 4px;
+	border-top: 1px solid var(--border);
+	color: var(--primary);
+	font-size: 0.92rem;
+	font-weight: 700;
+}
+.sg-note {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 14px;
+	color: var(--muted);
+	font-size: 0.9rem;
+}
+
+/* ------------------------------------------------------------ daftar komik */
+
+/* Tab jenis (Semua · Manga · Manhwa · Manhua): menempel di bawah header saat grid di-scroll. */
+.seg {
+	position: sticky;
+	top: calc(var(--header-h) + env(safe-area-inset-top, 0px) - 1px);
+	z-index: 40;
+	display: flex;
+	gap: 6px;
+	margin: 0 calc(var(--pr) * -1) 14px calc(var(--pl) * -1);
+	padding: 6px var(--pr) 6px var(--pl);
+	overflow-x: auto;
+	background: var(--bg);
+	scrollbar-width: none;
+}
+.seg-item {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	min-height: 44px;
+	padding: 0 clamp(12px, 3.4vw, 16px); /* 4 tab muat di 360px tanpa geser */
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--card);
+	color: var(--text);
+	font-size: 0.9rem;
+	font-weight: 700;
+	text-decoration: none;
+}
+.seg-item:hover {
+	border-color: var(--primary);
+	color: var(--primary);
+}
+.seg-item[aria-current="page"] {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--on-primary);
+}
+
+/* Baris pintas jenis di beranda */
+.quick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 14px;
+}
+.quick .chip {
+	padding-inline: 12px; /* 4 chip muat satu baris di 360px */
+}
+.chip-strong {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--on-primary);
+}
+.chip-strong:hover {
+	background: var(--primary);
+	color: var(--on-primary);
+	filter: brightness(1.08);
+}
+
+/* --------------------------------------------------- detail: sinopsis & pustaka */
+
+.synopsis {
+	margin: 0 0 22px;
+}
+.syn-body {
+	margin-top: 10px;
+	font-size: 0.95rem;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+.syn-body p {
+	margin: 0 0 0.7em;
+}
+.syn-body p:last-child {
+	margin-bottom: 0;
+}
+/* ~4 baris + pudar di dasar (bukan line-clamp: tidak andal untuk beberapa <p>) */
+.synopsis.is-clamped .syn-body {
+	max-height: 6.4em;
+	overflow: hidden;
+	-webkit-mask-image: linear-gradient(#000 55%, transparent);
+	mask-image: linear-gradient(#000 55%, transparent);
+}
+.syn-toggle {
+	margin-top: 8px;
+}
+
+.btn-bookmark svg {
+	width: 18px;
+	height: 18px;
+	flex: none;
+	fill: none;
+}
+.btn-bookmark[aria-pressed="true"] {
+	background: var(--primary-soft);
+	border-color: var(--primary);
+	color: var(--primary);
+}
+.btn-bookmark[aria-pressed="true"] svg path {
+	fill: currentColor;
+}
+.detail .cta .btn-resume {
+	flex: 1 1 100%;
+	justify-content: space-between;
+	gap: 10px;
+}
+.btn-pg {
+	flex: none;
+	padding: 2px 10px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--on-primary) 18%, transparent);
+	font-size: 0.78rem;
+}
+
+.ch-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.ch-tag {
+	flex: none;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--primary-soft);
+	color: var(--primary);
+	font-size: 0.72rem;
+	font-weight: 800;
+}
+.ch-check {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	color: var(--primary);
+}
+.chapter-list li.is-read a {
+	color: var(--muted);
+	font-weight: 500;
+}
+
+.card-sub {
+	margin: 2px 0 0;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 0.78rem;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- pustaka */
+
+.tabs {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 14px;
+	border-bottom: 1px solid var(--border);
+}
+.tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 44px;
+	margin-bottom: -1px;
+	padding: 0 16px;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	background: transparent;
+	color: var(--muted);
+	font-size: 0.95rem;
+	font-weight: 800;
+	cursor: pointer;
+}
+.tab:hover {
+	color: var(--text);
+}
+.tab[aria-selected="true"] {
+	border-bottom-color: var(--primary);
+	color: var(--primary);
+}
+.tab-count {
+	min-width: 22px;
+	padding: 0 7px;
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 0.75rem;
+	font-weight: 800;
+	line-height: 22px;
+	text-align: center;
+}
+.tab[aria-selected="true"] .tab-count {
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+.tab-panel:focus-visible {
+	outline-offset: 4px;
+}
+
+.lib-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px 12px;
+	margin-bottom: 10px;
+}
+.lib-bar p {
+	margin: 0;
+	font-size: 0.9rem;
+}
+.lib-list {
+	display: grid;
+	gap: 10px;
+}
+.lib-row {
+	display: grid;
+	grid-template-columns: 56px minmax(0, 1fr) 44px;
+	grid-template-areas:
+		"cover main remove"
+		"actions actions actions";
+	align-items: start;
+	gap: 8px 12px;
+	padding: 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--card);
+}
+.lib-cover {
+	grid-area: cover;
+	display: block;
+}
+.lib-main {
+	grid-area: main;
+	min-width: 0;
+}
+.lib-title {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	color: var(--text);
+	font-weight: 700;
+	line-height: 1.3;
+	text-decoration: none;
+}
+.lib-title:hover {
+	color: var(--primary);
+}
+.lib-meta,
+.lib-time {
+	margin: 2px 0 0;
+	font-size: 0.85rem;
+}
+.lib-remove {
+	grid-area: remove;
+	display: grid;
+	place-items: center;
+	padding: 0;
+}
+.lib-remove svg {
+	width: 18px;
+	height: 18px;
+}
+.lib-actions {
+	grid-area: actions;
+	display: flex;
+	gap: 8px;
+}
+.lib-actions .btn {
+	flex: 1 1 0;
+}
+@media (min-width: 640px) {
+	.lib-row {
+		grid-template-columns: 64px minmax(0, 1fr) auto 44px;
+		grid-template-areas: "cover main actions remove";
+		align-items: center;
+	}
+	.lib-actions .btn {
+		flex: none;
+	}
+}
+
+/* kartu bookmark: tombol hapus saudara dari tautan kartu, jadi tidak membuka judul */
+.bm {
+	position: relative;
+}
+.bm-remove {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+.bm-remove > span {
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.7);
+	color: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.bm-remove:hover > span {
+	background: var(--danger);
+}
+.bm-remove svg {
+	width: 14px;
+	height: 14px;
+}
+
+.empty p {
+	margin: 0;
+}
+.empty .btn {
+	margin-top: 14px;
+}
+
+.lib-tools {
+	margin-top: 28px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+}
+.lib-tools p {
+	margin: 0 0 10px;
+	font-size: 0.9rem;
+}
+.lib-tools-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.lib-tools .lib-status {
+	min-height: 1.5em;
+	margin: 10px 0 0;
+	color: var(--text);
+	font-weight: 600;
+}
+.lib-tools .lib-status.is-error {
+	color: var(--danger-ink);
 }

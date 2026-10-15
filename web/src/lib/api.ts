@@ -38,6 +38,8 @@ export interface MangaInfo {
   status?: string;
   rating?: string;
   genre?: string[];
+  /** Paragraf dipisah baris kosong ("\n\n"). Belum ada di API lama: tampilan menyembunyikan bagiannya. */
+  synopsis?: string;
   chapter_list?: ChapterRef[];
 }
 
@@ -54,7 +56,8 @@ interface Envelope<T> {
   code: number;
 }
 
-export const API_BASE = (import.meta.env.PUBLIC_API_URL || 'https://img2.kremlit.dev').replace(
+// `env?.`: di Node polos (tes) `import.meta.env` tidak ada; di Vite/Astro selalu ada dan nilainya diganti saat build.
+export const API_BASE = (import.meta.env?.PUBLIC_API_URL || 'https://img2.kremlit.dev').replace(
   /\/+$/,
   '',
 );
@@ -75,15 +78,42 @@ export const STALE_MS = 30 * 1000;
 /** Ukuran halaman daftar (popular/recommended/newest/genre) di API. */
 export const PAGE_SIZE = 10;
 
+/** `/api/comic/list` (Daftar Komik) memberi 50 judul per halaman; halaman terakhir lebih pendek. */
+export const LIST_PAGE_SIZE = 50;
+
+/** Filter jenis untuk Daftar Komik; '' = semua jenis (tanpa parameter `filter`). */
+export type ListTipe = '' | 'manga' | 'manhwa' | 'manhua';
+
 const STORE_PREFIX = 'mr:v1:';
 const MEM_MAX = 200;
 
+/**
+ * Jenis kegagalan untuk tampilan (`errorview.ts` memilih pesan & tombol dari sini); `message`
+ * ApiError hanya untuk log/debug, tidak pernah ditampilkan ke pengguna.
+ *  - notfound : 404/410 dari API (judul/halaman tidak ada)
+ *  - timeout  : tidak merespons dalam TIMEOUT_MS, atau 408/504
+ *  - offline  : fetch gagal saat `navigator.onLine === false`
+ *  - server   : sisanya — 5xx, respons bukan JSON, atau fetch gagal padahal browser online (API mati/ditolak)
+ *  - unknown  : bukan ApiError (mis. exception saat render)
+ */
+export type ErrorKind = 'notfound' | 'server' | 'timeout' | 'offline' | 'unknown';
+
+const kindOfStatus = (status: number): ErrorKind =>
+  status === 404 || status === 410 ? 'notfound' : status === 408 || status === 504 ? 'timeout' : 'server';
+
+// Properti ditulis eksplisit (bukan parameter property) agar berkas ini bisa di-strip dan dijalankan Node apa adanya.
 export class ApiError extends Error {
-  constructor(message: string, readonly code = 0) {
+  readonly code: number;
+  readonly kind: ErrorKind;
+  constructor(message: string, code = 0, kind: ErrorKind = kindOfStatus(code)) {
     super(message);
     this.name = 'ApiError';
+    this.code = code;
+    this.kind = kind;
   }
 }
+
+export const errorKind = (e: unknown): ErrorKind => (e instanceof ApiError ? e.kind : 'unknown');
 
 /* ------------------------------------------------------------------ cache */
 
@@ -212,12 +242,13 @@ async function request<T>(path: string): Promise<T> {
   try {
     res = await fetch(`${API_BASE}${path}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (e) {
-    const timeout = e instanceof Error && e.name === 'TimeoutError';
-    throw new ApiError(
-      timeout
-        ? `API tidak merespons dalam ${TIMEOUT_MS / 1000} detik`
-        : 'Tidak dapat menghubungi API',
-    );
+    if (e instanceof Error && e.name === 'TimeoutError') {
+      throw new ApiError(`API tidak merespons dalam ${TIMEOUT_MS / 1000} detik`, 0, 'timeout');
+    }
+    // fetch menolak dengan TypeError baik saat browser offline maupun saat API mati/ditolak;
+    // hanya yang pertama boleh disebut "offline".
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    throw new ApiError(offline ? 'Tidak ada koneksi internet' : 'Tidak dapat menghubungi API', 0, offline ? 'offline' : 'server');
   }
 
   let body: Envelope<T>;
@@ -281,6 +312,11 @@ export const paths = {
   newest: (page = 1) => `/api/comic/newest/page/${page}`,
   genres: () => '/api/comic/genre',
   byGenre: (slug: string, page = 1) => `/api/comic/genres/${encodeURIComponent(slug)}/page/${page}`,
+  /** Parameter default (tanpa filter, halaman 1) dihilangkan agar kunci cache sama dengan yang di-prefetch. */
+  list: (tipe: ListTipe = '', page = 1) => {
+    const q = [tipe && `filter=${tipe}`, page > 1 && `page=${page}`].filter(Boolean).join('&');
+    return `/api/comic/list${q ? `?${q}` : ''}`;
+  },
   search: (q: string) => `/api/comic/search/${encodeURIComponent(q)}`,
   info: (slug: string) => `/api/comic/info/manga/${encodeURIComponent(slugOf(slug))}`,
   chapter: (slug: string) => `/api/comic/chapter/${encodeURIComponent(chapterSlug(slug))}`,
@@ -295,6 +331,8 @@ export const getNewest = (page = 1) => get<Manga[]>(paths.newest(page));
 export const getGenres = () => get<Genre[]>(paths.genres());
 
 export const getByGenre = (slug: string, page = 1) => get<Manga[]>(paths.byGenre(slug, page));
+
+export const getList = (tipe: ListTipe = '', page = 1) => get<Manga[]>(paths.list(tipe, page));
 
 export const search = (q: string) => get<Manga[]>(paths.search(q));
 

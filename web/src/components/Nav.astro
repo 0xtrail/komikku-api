@@ -1,7 +1,9 @@
 ---
 // Header lengket ringkas: merek, navigasi utama (desktop), kolom cari kompak,
 // tombol tema. Navigasi utama ponsel ada di TabBar.astro.
-// Menu aktif & tombol tema dikelola di src/lib/site.ts.
+// Menu aktif & tombol tema dikelola di src/lib/site.ts; sub-menu Daftar di navmenu.ts;
+// autocomplete (kotak #suggest) di suggest.ts, yang juga memasang atribut ARIA combobox.
+// Lencana [data-bm-count] di tautan Pustaka diisi bookmarks.ts (tersembunyi bila 0).
 ---
 <header class="site-header">
 	<div class="wrap bar">
@@ -16,27 +18,46 @@
 
 		<nav class="primary-nav" aria-label="Utama">
 			<a href="/" data-nav="home">Beranda</a>
+			<div class="nav-drop" data-menu>
+				<button type="button" class="nav-trigger" data-nav="daftar" data-menu-toggle aria-expanded="false" aria-controls="menu-daftar">
+					Daftar
+					<svg class="chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+				</button>
+				<ul class="nav-menu" id="menu-daftar" data-menu-list role="list" hidden>
+					<li><a href="/daftar/" data-tipe="">Semua judul</a></li>
+					<li><a href="/daftar/?tipe=manga" data-tipe="manga">Manga</a></li>
+					<li><a href="/daftar/?tipe=manhwa" data-tipe="manhwa">Manhwa</a></li>
+					<li><a href="/daftar/?tipe=manhua" data-tipe="manhua">Manhua</a></li>
+				</ul>
+			</div>
 			<a href="/populer/" data-nav="populer">Populer</a>
 			<a href="/terbaru/" data-nav="terbaru">Terbaru</a>
 			<a href="/#genre" data-nav="genre">Genre</a>
+			<a href="/pustaka/" data-nav="pustaka">Pustaka<span class="nav-badge" data-bm-count hidden></span></a>
 		</nav>
 
 		<form class="search" action="/search/" method="get" role="search">
-			<input
-				id="q"
-				type="search"
-				name="q"
-				placeholder="Cari judul…"
-				aria-label="Cari manga"
-				autocomplete="off"
-				enterkeyhint="search"
-			/>
-			<button type="submit" aria-label="Cari">
-				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-					<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
-					<path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-				</svg>
-			</button>
+			<div class="search-field">
+				<input
+					id="q"
+					type="search"
+					name="q"
+					placeholder="Cari judul…"
+					aria-label="Cari manga"
+					autocomplete="off"
+					enterkeyhint="search"
+				/>
+				<button type="submit" aria-label="Cari">
+					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
+						<path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+					</svg>
+				</button>
+			</div>
+			<div class="suggest" id="suggest" role="listbox" aria-label="Saran pencarian" hidden></div>
+			<p class="sr-only" id="suggest-live" role="status" aria-live="polite"></p>
 		</form>
 
 		<button class="theme-toggle" type="button" data-theme-toggle aria-label="Mode gelap" aria-pressed="false">

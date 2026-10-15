@@ -8,15 +8,21 @@ import { API_BASE } from '../lib/api';
 interface Props {
 	title?: string;
 	description?: string;
+	/** Nilai `data-view` tetap (halaman galat dilayani di URL mana pun, jadi tak bisa diturunkan dari path). */
+	view?: string;
+	/** Halaman galat tidak untuk diindeks. */
+	noindex?: boolean;
 }
 
 const {
 	title = 'Panel — Baca manga, manhwa & manhua',
 	description = 'Baca manga, manhwa, dan manhua terbaru dengan tampilan ringan dan cepat.',
+	view,
+	noindex = false,
 } = Astro.props;
 ---
 <!doctype html>
-<html lang="id">
+<html lang="id" data-view={view}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -24,6 +30,7 @@ const {
 		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)" />
 		<meta name="description" content={description} />
+		{noindex && <meta name="robots" content="noindex" />}
 		<title>{title}</title>
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<!-- Koneksi ke API (fetch CORS) dan gambar (no-cors) memakai pool socket berbeda. -->
@@ -37,7 +44,7 @@ const {
 					var t = localStorage.getItem('mr:theme');
 					if (t === 'dark' || t === 'light') d.setAttribute('data-theme', t);
 				} catch (e) {}
-				d.setAttribute('data-view', location.pathname.split('/')[1] || 'home');
+				if (!d.getAttribute('data-view')) d.setAttribute('data-view', location.pathname.split('/')[1] || 'home');
 			})();
 		</script>
 	</head>

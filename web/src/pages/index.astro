@@ -5,6 +5,7 @@
 // src/lib/views.ts — fungsi yang sama dipakai klien, jadi tidak ada layout jump.
 import Base from '../layouts/Base.astro';
 import { getPopular, getRecommended, getNewest, getGenres } from '../lib/api';
+import { daftarHref } from '../lib/routes';
 import {
 	railHtml,
 	gridHtml,
@@ -71,6 +72,25 @@ const sections = [
 ---
 <Base>
 	<h1 class="sr-only">Baca manga, manhwa, dan manhua online</h1>
+	<!-- Hanya di browser: mountResumeRail (pustaka.ts) mengisi dan menampilkannya bila ada riwayat. -->
+	<section class="sec" id="lanjut" aria-labelledby="h-lanjut" data-sec="resume" hidden>
+		<header class="sec-head">
+			<h2 id="h-lanjut">
+				<i class="mark" aria-hidden="true" />
+				Lanjutkan Membaca
+			</h2>
+			<a class="more" href="/pustaka/">
+				Lihat semua<span aria-hidden="true"> &rarr;</span>
+			</a>
+		</header>
+		<div class="sec-body" data-body></div>
+	</section>
+	<nav class="quick" aria-label="Jelajahi daftar komik">
+		<a class="chip chip-strong" href={daftarHref()} aria-label="Semua judul">Semua</a>
+		<a class="chip" href={daftarHref('manga')}>Manga</a>
+		<a class="chip" href={daftarHref('manhwa')}>Manhwa</a>
+		<a class="chip" href={daftarHref('manhua')}>Manhua</a>
+	</nav>
 	{
 		sections.map((s) => (
 			<section class="sec" id={s.id} aria-labelledby={`h-${s.id}`} data-sec={s.key}>
