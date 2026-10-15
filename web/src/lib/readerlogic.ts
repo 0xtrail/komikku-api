@@ -47,8 +47,8 @@ export function mangaRefOf(ch: Pick<ChapterDetail, 'manga_endpoint'>, chapter: s
 }
 
 /** Tebakan baru dianggap benar bila chapter ini ada di daftar chapter manga tersebut. */
-export const listHasChapter = (list: readonly ChapterRef[], chapter: string): boolean =>
-  list.some((c) => eqSlug(chapterSlug(c.endpoint), chapter));
+export const listHasChapter = (list: readonly ChapterRef[] | null | undefined, chapter: string): boolean =>
+  list?.some((c) => eqSlug(chapterSlug(c.endpoint), chapter)) ?? false;
 
 export interface Steps {
   prev?: Step;
@@ -65,7 +65,7 @@ export interface Steps {
 export function resolveSteps(
   slug: string,
   ch: Pick<ChapterDetail, 'prev_endpoint' | 'next_endpoint'>,
-  list?: readonly ChapterRef[],
+  list?: readonly ChapterRef[] | null,
 ): Steps {
   const at = list ? list.findIndex((c) => eqSlug(chapterSlug(c.endpoint), slug)) : -1;
   const step = (endpoint: string | undefined, neighbour: ChapterRef | undefined): Step | undefined => {
@@ -80,7 +80,7 @@ export function resolveSteps(
 }
 
 /** Nama chapter menurut daftar chapter manga (cocok lewat slug); undefined bila daftar belum ada / tak memuatnya. */
-export const listName = (list: readonly ChapterRef[] | undefined, slug: string): string | undefined =>
+export const listName = (list: readonly ChapterRef[] | null | undefined, slug: string): string | undefined =>
   list?.find((c) => eqSlug(chapterSlug(c.endpoint), slug))?.name;
 
 /* ------------------------------------------------------------ lanjut baca */
