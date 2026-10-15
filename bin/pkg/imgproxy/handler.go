@@ -47,6 +47,10 @@ func (p *Proxy) Mount(router *echo.Echo) {
 // not allowed) is the same 404 as any unknown route, so a caller cannot tell a
 // forged token from a valid token for a host that is no longer allowed.
 // Upstream problems are 404 (origin 404) or 502.
+//
+// With the disk cache on, the token and the allowlist are still checked first;
+// only then is the cache consulted, and X-Cache says HIT or MISS. With the cache
+// off the response is exactly what it was before the cache existed.
 func (p *Proxy) Serve(c echo.Context) error {
 	if !p.Enabled() {
 		return utils.ResponseError(httpError.NewNotFound(), c)
@@ -58,6 +62,13 @@ func (p *Proxy) Serve(c echo.Context) error {
 	}
 	if u, err := url.Parse(target); err != nil || !p.allowedURL(u) {
 		return utils.ResponseError(httpError.NewNotFound(), c)
+	}
+
+	if p.cache != nil {
+		if img, ok := p.cache.open(cacheKey(target)); ok {
+			defer img.Close()
+			return p.serveCached(c, img)
+		}
 	}
 
 	// A fresh request with a fixed header set: client cookies, Authorization and
@@ -85,7 +96,7 @@ func (p *Proxy) Serve(c echo.Context) error {
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/") {
+	if !isImageType(contentType) {
 		utils.LogError(contentType, "imgproxy: upstream content type is not an image")
 		return utils.ResponseError(httpError.NewBadGateway(), c)
 	}
@@ -94,13 +105,104 @@ func (p *Proxy) Serve(c echo.Context) error {
 		return utils.ResponseError(httpError.NewBadGateway(), c)
 	}
 
-	h := c.Response().Header()
-	h.Set("Content-Type", contentType)
-	if resp.ContentLength >= 0 {
-		h.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+	meta := entryMeta{
+		ContentType:     contentType,
+		LastModified:    resp.Header.Get("Last-Modified"),
+		ETag:            resp.Header.Get("ETag"),
+		ContentEncoding: resp.Header.Get("Content-Encoding"),
 	}
-	for _, name := range []string{"Last-Modified", "ETag", "Content-Encoding"} {
-		if v := resp.Header.Get(name); v != "" {
+	setImageHeaders(c.Response().Header(), meta, resp.ContentLength)
+	if p.cache != nil {
+		c.Response().Header().Set("X-Cache", "MISS")
+	}
+	c.Response().WriteHeader(http.StatusOK)
+
+	if c.Request().Method == http.MethodHead {
+		return nil
+	}
+
+	p.stream(c, resp, meta, target)
+	return nil
+}
+
+// serveCached answers from a cache entry with the headers of an upstream success.
+func (p *Proxy) serveCached(c echo.Context, img *cachedImage) error {
+	setImageHeaders(c.Response().Header(), img.meta, img.meta.Size)
+	c.Response().Header().Set("X-Cache", "HIT")
+	c.Response().WriteHeader(http.StatusOK)
+
+	if c.Request().Method == http.MethodHead {
+		return nil
+	}
+	if _, err := io.Copy(c.Response(), img.body()); err != nil {
+		utils.LogError(err.Error(), "imgproxy: streaming the cached image failed")
+	}
+	return nil
+}
+
+// stream copies the upstream body to the client, capped at maxBody. It is
+// streamed straight through, never buffered whole. The headers are already
+// sent, so a failure from here on can only abort the transfer.
+//
+// With the cache on, a 200 body is also written to a cache entry, which is
+// published only if the whole image arrived (see bodyComplete) and the client
+// stream did not fail.
+func (p *Proxy) stream(c echo.Context, resp *http.Response, meta entryMeta, target string) {
+	var out io.Writer = c.Response()
+	var fill *cacheFill
+	if p.cache != nil && resp.StatusCode == http.StatusOK {
+		var err error
+		if fill, err = p.cache.newFill(cacheKey(target)); err != nil {
+			utils.LogError(err.Error(), "imgproxy: cannot start a cache entry")
+		} else {
+			out = io.MultiWriter(out, fill) // the client first: a failed write stops the copy
+		}
+	}
+
+	n, err := io.Copy(out, io.LimitReader(resp.Body, p.maxBody))
+	if err != nil {
+		utils.LogError(err.Error(), "imgproxy: streaming the image failed")
+	}
+	if fill == nil {
+		return
+	}
+	if err != nil || n == 0 || !p.bodyComplete(resp, n) {
+		fill.abort()
+		return
+	}
+	if err := fill.commit(meta); err != nil {
+		utils.LogError(err.Error(), "imgproxy: cannot cache the image")
+	}
+}
+
+// bodyComplete reports whether the n bytes copied are the whole upstream body
+// and not a prefix cut by the size cap.
+func (p *Proxy) bodyComplete(resp *http.Response, n int64) bool {
+	if resp.ContentLength >= 0 {
+		return n == resp.ContentLength
+	}
+	if n < p.maxBody {
+		return true // the limited reader stopped because upstream ended
+	}
+	// Exactly at the cap with no declared length: complete only if nothing follows.
+	var next [1]byte
+	_, err := io.ReadFull(resp.Body, next[:])
+	return errors.Is(err, io.EOF)
+}
+
+// setImageHeaders sets the headers shared by an upstream success and a cache
+// hit. A negative length leaves Content-Length unset.
+func setImageHeaders(h http.Header, m entryMeta, length int64) {
+	h.Set("Content-Type", m.ContentType)
+	if length >= 0 {
+		h.Set("Content-Length", strconv.FormatInt(length, 10))
+	}
+	for name, v := range map[string]string{
+		"Last-Modified":    m.LastModified,
+		"ETag":             m.ETag,
+		"Content-Encoding": m.ContentEncoding,
+	} {
+		if v != "" {
 			h.Set(name, v)
 		}
 	}
@@ -109,18 +211,10 @@ func (p *Proxy) Serve(c echo.Context) error {
 	// as a document if someone opens the URL directly.
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	c.Response().WriteHeader(http.StatusOK)
+}
 
-	if c.Request().Method == http.MethodHead {
-		return nil
-	}
-
-	// Streamed straight to the client: no disk, no full buffering. The headers
-	// are already sent, so a failure from here on can only abort the transfer.
-	if _, err := io.Copy(c.Response(), io.LimitReader(resp.Body, p.maxBody)); err != nil {
-		utils.LogError(err.Error(), "imgproxy: streaming the image failed")
-	}
-	return nil
+func isImageType(contentType string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
 }
 
 // newClient builds the dedicated upstream client. control, when not nil, runs

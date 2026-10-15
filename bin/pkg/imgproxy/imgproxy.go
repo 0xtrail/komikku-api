@@ -63,6 +63,13 @@ type Config struct {
 	// PublicURL is the absolute base of rewritten URLs. Empty derives it per
 	// request from the scheme and Host of the incoming request.
 	PublicURL string
+	// CacheDir enables the on-disk image cache (PROXY_CACHE_DIR) in that
+	// directory. Empty, or a directory that cannot be created and written (one
+	// warning is logged), leaves the cache off.
+	CacheDir string
+	// CacheMaxBytes caps the cache (PROXY_CACHE_MAX_MB); zero or negative means
+	// 1 GiB.
+	CacheMaxBytes int64
 }
 
 // Proxy encrypts, decrypts and serves proxied image URLs. A Proxy with no valid
@@ -75,6 +82,7 @@ type Proxy struct {
 
 	client  *http.Client
 	maxBody int64
+	cache   *diskCache // nil when the disk cache is off
 }
 
 // New builds a Proxy from cfg. It never fails and never logs the key.
@@ -107,6 +115,11 @@ func New(cfg Config) *Proxy {
 	}
 
 	p.client = newClient(p, guardDial)
+
+	// A disabled proxy never serves, so it never touches the disk either.
+	if p.Enabled() {
+		p.cache = newConfiguredCache(cfg)
+	}
 	return p
 }
 

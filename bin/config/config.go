@@ -3,6 +3,7 @@ package config
 import (
 	"github.com/joho/godotenv"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,11 @@ type Env struct {
 	ProxyHMACKey      string
 	ProxyAllowedHosts []string
 	ProxyPublicURL    string
+
+	// Optional on-disk cache of proxied images. ProxyCacheDir empty means off;
+	// ProxyCacheMaxMB is always positive.
+	ProxyCacheDir   string
+	ProxyCacheMaxMB int
 }
 
 var GlobalEnv Env
@@ -80,6 +86,11 @@ func init() {
 		GlobalEnv.ProxyAllowedHosts = splitList(defaultProxyAllowedHosts)
 	}
 	GlobalEnv.ProxyPublicURL = strings.TrimRight(strings.TrimSpace(os.Getenv("PROXY_PUBLIC_URL")), "/")
+
+	// Image cache on disk: PROXY_CACHE_DIR (empty = off) and PROXY_CACHE_MAX_MB.
+	// The proxy itself reports a directory it cannot use and falls back to off.
+	GlobalEnv.ProxyCacheDir = strings.TrimSpace(os.Getenv("PROXY_CACHE_DIR"))
+	GlobalEnv.ProxyCacheMaxMB = parseCacheMaxMB(os.Getenv("PROXY_CACHE_MAX_MB"))
 }
 
 const defaultAPIURL = "https://api.komiku.org/"
@@ -87,6 +98,27 @@ const defaultAPIURL = "https://api.komiku.org/"
 // defaultProxyAllowedHosts is the image CDN allowlist used when
 // PROXY_ALLOWED_HOSTS is not set. "*.x.y" matches x.y and every subdomain.
 const defaultProxyAllowedHosts = "*.komiku.to,*.komiku.org"
+
+// defaultProxyCacheMaxMB is the disk cache limit when PROXY_CACHE_MAX_MB is
+// not set or not usable.
+const defaultProxyCacheMaxMB = 1024
+
+// parseCacheMaxMB parses PROXY_CACHE_MAX_MB, a positive number of MiB. Empty
+// means the default silently; anything else that is not a positive integer
+// (absurdly large values would overflow the byte count) logs one line and means
+// the default.
+func parseCacheMaxMB(v string) int {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return defaultProxyCacheMaxMB
+	}
+	mb, err := strconv.Atoi(v)
+	if err != nil || mb <= 0 || mb > math.MaxInt32 {
+		log.Printf("PROXY_CACHE_MAX_MB %q is not a positive number of MiB, using %d", v, defaultProxyCacheMaxMB)
+		return defaultProxyCacheMaxMB
+	}
+	return mb
+}
 
 // withTrailingSlash makes sure the URL ends with exactly one "/".
 func withTrailingSlash(u string) string {
