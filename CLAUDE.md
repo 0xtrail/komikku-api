@@ -38,8 +38,11 @@ go run ./bin/app/main.go                # same as build+start, no binary left be
 make install                            # go mod download
 ```
 
-There are no tests, no linter config, and no `gofmt` target in the Makefile. `go vet ./...` and
-`gofmt -l .` are the only static checks available. The `docker-compose`/`up`/`down` targets target
+Tests: `bin/pkg/imgproxy` needs no environment (`go test ./bin/pkg/imgproxy`); `bin/config` and
+`bin/modules/manga/repositories/queries` import `config`, whose `init()` panics without `PORT` and
+`BASE_URL`, so run everything as `PORT=0 BASE_URL=https://komiku.org/ go test ./...`. There is no
+linter config and no `gofmt` target in the Makefile. `go vet ./...` and `gofmt -l .` are the only static checks available. Many
+files predate gofmt and are listed by `gofmt -l .`; keep new files gofmt-clean and do not reformat old ones. The `docker-compose`/`up`/`down` targets target
 a local daemon — do not run those on the Mac (see the host rules in `~/.claude/CLAUDE.md`).
 
 **Run from the repo root.** `config.init()` calls `godotenv.Load()` (cwd-relative) and derives
@@ -63,7 +66,8 @@ bin/modules/<m>/usecases/       usecase.go (interface) + query_usecase.go (impl)
 bin/modules/<m>/repositories/queries/   query.go (interface) + *_impl.go (colly scraping)
 bin/modules/<m>/models/domain/  response DTOs with json tags
 bin/pkg/utils/wrapper.go        Result envelope, Response(), ResponseError(), logging
-bin/pkg/http-error/error.go     typed error constructors (BadRequest, NotFound, ...)
+bin/pkg/http-error/error.go     typed error constructors (BadRequest, NotFound, BadGateway, ...)
+bin/pkg/imgproxy/               image proxy: token crypto, allowlist, rewrite, GET /img/:token handler
 bin/pkg/middlewares/log.go      JSON-ish echo request logger
 ```
 
@@ -100,7 +104,7 @@ as `manga/<slug>/` or `/manga/<slug>/`). Verified live state of the upstream:
 | Endpoint | Live URL | Markup |
 | --- | --- | --- |
 | all / filter | `komiku.org/daftar-komik/` (`?tipe=manga\|manhwa\|manhua`, `?halaman=N`) | `article.manga-card`, `h4`, `a[href]`, `img[data-src]` (src is a lazy placeholder), `p.meta` |
-| info | `komiku.org/manga/<slug>/` | `table.inftable` rows matched by label, `ul.genre li.genre`, `div.ims img[src]` |
+| info | `komiku.org/manga/<slug>/` | `table.inftable` rows matched by label, `ul.genre li.genre`, `div.ims img[src]`, synopsis in `p.desc` (fallback: first `p` of the hidden `section#Sinopsis`) |
 | chapter list | same page, `tbody._3Rsjq` rows with `td.judulseries a` | chapter href is `/<slug>-chapter-N/`, **not** `/ch/...`; the header row only has `th.judulseries` |
 | chapter detail | `komiku.org/<slug>-chapter-N/` | `#Baca_Komik img.klazy[src]`, `#Judul h1` (ids, not `section`/`header`) |
 | genre list | `komiku.org/p/daftar-genre/` | `a.gnr` with `<b>` title and `/genre/<slug>/` href |
@@ -142,6 +146,16 @@ the first `td` (trimmed, trailing `:` removed, lowercased): `judul`, `tipe`, `au
 positional `tr:nth-child(N)` parsing broke when upstream added the alternative-title row; do not go
 back to positions.
 
+`ComicInfo.Synopsis` (`synopsis`, an empty string when absent, never an error) comes from the first
+non-empty `p.desc` / `p[itemprop=description]`, else from `section#Sinopsis p` (a `display:none` copy
+of the same text). The two `OnHTML` callbacks run in registration order and share a guard so only the
+first non-empty text is kept. Inside the callback read `e.DOM.Text()`, not `e.Text`: colly computes
+`e.Text` before the callback runs, and `<br>` is turned into a newline first so words do not glue.
+`normalizeSynopsis` (`synopsis.go`) trims, normalizes CRLF, splits paragraphs on whitespace-only lines,
+collapses whitespace inside a paragraph and joins paragraphs with exactly `"\n\n"`. The tests in this
+package need env vars because `config.init()` panics without them:
+`PORT=0 BASE_URL=https://komiku.org/ go test ./bin/modules/manga/...`.
+
 `GetAllGenre` takes the genre slug from the `/genre/<slug>/` **href**, not from `data-nama`:
 `data-nama` is a display name for about 20 genres (`dark fantasy`, `shoujo(g)`, `girls&#039; love`) and
 `/genre/dark%20fantasy/` is a 404 upstream, while `/genre/dark-fantasy/` works. `data-nama` is only a
@@ -159,9 +173,9 @@ usecases (`Data not found` for the listings), not by the query layer.
 
 ## Wiring is manual, no DI container
 
-`handlers.New()` builds its own `colly.NewCollector()`, constructs the query impls with
-`config.GlobalEnv.BaseURL`, and hands them to `CreateNewMangaUsecase`. `main.go` calls `New()` +
-`Mount(e)` per module. Adding a module means touching `main.go` by hand.
+`handlers.New(imgProxy)` builds its own `colly.NewCollector()`, constructs the query impls with
+`config.GlobalEnv.BaseURL`, and hands them to `CreateNewMangaUsecase`. `main.go` builds one
+`*imgproxy.Proxy`, calls `imgProxy.Mount(e)`, then `New(imgProxy)` + `Mount(e)` per module. Adding a module means touching `main.go` by hand.
 
 One `*colly.Collector` is shared between the manga and chapter queries within a handler, but it is
 only a template: every scraping method starts with `c := g.Collector.Clone()` (colly v1.2.0 copies the
@@ -180,3 +194,64 @@ designs to be shared.
 - Response `message` strings are part of the public API contract, and several were copy-pasted
   wrong (`GetPopularManga` returns `"Search manga"`). Preserve them when refactoring; changing them
   breaks existing clients.
+
+## Image proxy (`bin/pkg/imgproxy`)
+
+Clients must not load images from Komiku's CDN hosts (`thumbnail.komiku.to`, `image2.komiku.to`,
+`img.komiku.org`, ...): hotlink protection would break every image and the hosts are exposed. When the
+proxy is enabled, image URLs in responses become `<base>/img/<token>` and `GET|HEAD /img/:token`
+(mounted in `main.go`, outside `/api`) verifies the token and streams the image from the origin.
+
+- **Config** (all optional, none can panic): `PROXY_HMAC_KEY` (standard base64 of exactly 32 bytes,
+  `openssl rand -base64 32`; empty or invalid logs one line, never the key, and disables the proxy),
+  `PROXY_ALLOWED_HOSTS` (default `*.komiku.to,*.komiku.org`; `*.x.y` matches `x.y` and subdomains,
+  a bare host matches exactly, hostname only, case-insensitive) and `PROXY_PUBLIC_URL` (absolute
+  base; empty derives `c.Scheme()://Host` per request, `X-Forwarded-Proto` is honoured). The package
+  never imports `config` (its `init()` panics without `PORT`/`BASE_URL`, which would break tests);
+  `main.go` passes `config.GlobalEnv.Proxy*` in.
+- **Token**: authenticated encryption, deterministic per URL. `encKey = HMAC-SHA256(master, "komikku-imgproxy enc v1")`,
+  `nonceKey = HMAC-SHA256(master, "komikku-imgproxy nonce v1")`, `nonce = HMAC-SHA256(nonceKey, url)[:12]`,
+  `token = base64url_nopad(nonce || AES-256-GCM(encKey, nonce, url, aad="komikku-imgproxy v1"))`.
+  The nonce is a keyed synthetic IV: the same URL always yields the same token (stable browser/CDN
+  caches) and different URLs never share a nonce. Never replace it with an unkeyed hash (that would let
+  anyone confirm a guessed URL) and never use a random nonce (tokens would change on every request).
+  `Verify` also recomputes the nonce from the decrypted URL. Changing the key invalidates every token
+  already handed out; there is no key rotation.
+- **Rewrite location**: in the handlers, right before `utils.Response`, via `proxyImages` in
+  `modules/{manga,chapter}/handlers/proxy_images.go` (type switch on `result.Data`: `[]Comic.Image`,
+  `ComicInfo.Thumbnail`, `ChapterDetail.Image`). Usecase and query interfaces are untouched. Only
+  absolute http(s) URLs on an allowed host are rewritten; anything else is returned as is. With the
+  proxy disabled the output is byte-identical to before.
+- **Serving**: every rejection before the upstream request (proxy disabled, bad token, host no longer
+  allowed, non-http(s), userinfo) is the same 404 envelope as any unknown route, so a forged token
+  looks like a missing one. Upstream 404 is 404; other upstream failures, a non-`image/*`
+  Content-Type, or a declared size above 25 MiB are 502 (`httpError.BadGateway`). The body is streamed
+  with `io.Copy` through a 25 MiB `LimitReader`, `Cache-Control: public, max-age=2592000, immutable`,
+  plus `nosniff` and a sandbox CSP because the bytes are served from our origin.
+- **SSRF guards**: the allowlist is applied to the decrypted URL and again to every redirect hop (at
+  most 3). The dedicated `http.Client` dials through a `net.Dialer.Control` that checks the already
+  resolved IP and refuses loopback, RFC1918, fc00::/7, link-local, unspecified, multicast, CGNAT
+  100.64/10 and other reserved ranges (so an allowed name that resolves internally still fails). No
+  environment proxy, no client cookies/Authorization/Referer forwarded, fixed browser User-Agent.
+- **Tests**: `go test ./bin/pkg/imgproxy` covers token crypto (every byte tampered, wrong key,
+  determinism), key parsing, allowlist, IP blocking, rewrite and the handler against a local fake CDN.
+  Handler tests swap in a client without the dial guard because the fake CDN is on loopback.
+  `cache_test.go` covers miss/hit, HEAD, nothing cached for truncated/non-image/404/502 or a client
+  that drops, eviction order and the 90% target, startup scan, corrupt entries, concurrent misses and
+  the cache-off headers; run it with `-race`.
+- `PROXY_PUBLIC_URL` should be set in production: without it the base comes from the request `Host`
+  header.
+- **Disk cache** (`cache.go`, opt-in via `PROXY_CACHE_DIR` for the binary, but the Dockerfile defaults it to
+  `/data/imgcache` so the image has it on; `PROXY_CACHE_MAX_MB`, default 1024, invalid
+  or <=0 logs one line and means the default; unusable dir logs one warning and runs with the cache off,
+  and a proxy without a valid key never touches the disk): key = hex SHA-256 of the decrypted upstream
+  URL, sharded by its first 2 hex chars, one file per entry laid out `<body><meta JSON><4-byte meta
+  length>` (the metadata trails because it is only known after streaming; one rename publishes, one
+  unlink evicts). Only a complete `200` `image/*` body is cached: the copy must not error (client
+  disconnect included) and must not be cut by the 25 MiB cap; HEAD never fills it. Token and allowlist
+  checks run before the lookup. `X-Cache: HIT|MISS` is set only when the cache is on (the cache-off
+  response is byte-identical to before). Eviction is LRU by mtime (hits `Chtimes`) in one background
+  goroutine, down to 90% of the limit; only files named like entries are ever deleted. The image creates
+  `/data/imgcache` (runs as root); mount a persistent volume there (e.g. a Dokploy volume) or the cache is
+  lost on every redeploy. An empty `PROXY_CACHE_DIR=` in the container env overrides the image default and
+  turns the cache off.

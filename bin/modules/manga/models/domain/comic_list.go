@@ -29,6 +29,7 @@ type (
 		Author		string 		`json:"author"`
 		Status		string 		`json:"status"`
 		Rating		string 		`json:"rating"`
+		Synopsis	string 		`json:"synopsis"`
 		Genre		[]string 	`json:"genre"`
 		ChapterList []domain.Chapter 	`json:"chapter_list"`
 	}

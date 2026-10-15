@@ -25,10 +25,13 @@ func main() {
 
 	// One image proxy shared by the handlers that rewrite image URLs and the
 	// /img/:token route that serves them. Disabled unless PROXY_HMAC_KEY is valid.
+	// PROXY_CACHE_DIR optionally keeps the fetched images on disk.
 	imgProxy := imgproxy.New(imgproxy.Config{
-		HMACKey:      config.GlobalEnv.ProxyHMACKey,
-		AllowedHosts: config.GlobalEnv.ProxyAllowedHosts,
-		PublicURL:    config.GlobalEnv.ProxyPublicURL,
+		HMACKey:       config.GlobalEnv.ProxyHMACKey,
+		AllowedHosts:  config.GlobalEnv.ProxyAllowedHosts,
+		PublicURL:     config.GlobalEnv.ProxyPublicURL,
+		CacheDir:      config.GlobalEnv.ProxyCacheDir,
+		CacheMaxBytes: int64(config.GlobalEnv.ProxyCacheMaxMB) << 20,
 	})
 	imgProxy.Mount(e)
 

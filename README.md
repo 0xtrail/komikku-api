@@ -31,6 +31,47 @@ Environment variables (or a `.env` file in the repository root):
 | `PORT`     | yes      | HTTP port the API listens on |
 | `BASE_URL` | yes      | Upstream site, `https://komiku.org/` |
 | `API_URL`  | no       | Upstream listing host, defaults to `https://api.komiku.org/` |
+| `PROXY_HMAC_KEY` | no | Master key of the image proxy: standard base64 of exactly 32 bytes, generate one with `openssl rand -base64 32`. Empty or invalid (the API still boots, a warning is logged) leaves the proxy off |
+| `PROXY_ALLOWED_HOSTS` | no | Comma separated hosts the proxy may fetch from, default `*.komiku.to,*.komiku.org`. `*.example.com` matches `example.com` and every subdomain, `host.tld` matches exactly |
+| `PROXY_PUBLIC_URL` | no | Absolute base of the rewritten image URLs, e.g. `https://img2.example.com`. Empty derives it from each request (`X-Forwarded-Proto` + `Host`) |
+| `PROXY_CACHE_DIR` | no | Directory of the image proxy's on-disk cache. Empty keeps the cache off, which is the default when running the binary directly; the Docker image defaults it to `/data/imgcache`. If the directory cannot be created or written the API still boots, a warning is logged and the cache stays off |
+| `PROXY_CACHE_MAX_MB` | no | Size limit of that cache in MiB, default `1024`. A value that is not a positive integer logs one line and means the default |
+
+## Image proxy
+When `PROXY_HMAC_KEY` is set, every image URL in the responses (`image` of the comic listings,
+`thumbnail` of comic info, `image` of chapter pages) is rewritten from the Komiku CDN host to
+`<base>/img/<token>`, and `GET /img/<token>` streams the image from the origin. Clients then never
+load images from Komiku directly, so Referer-based hotlink protection cannot break them and the CDN
+hosts stay out of the responses.
+
+   ```
+   "image": "https://api.example.com/img/<token>"
+   ```
+
+The token is the original URL encrypted with AES-256-GCM (authenticated), so the host is not
+readable and a token cannot be forged or edited. It is deterministic: the same URL always gives
+the same token, which keeps browser and CDN caches stable. Responses are sent with
+`Cache-Control: public, max-age=2592000, immutable`. Without a valid key nothing changes: image
+URLs stay the raw CDN URLs and `/img/...` answers 404.
+
+### Disk cache (optional)
+By default every `/img/<token>` request fetches the image from the origin again. With
+`PROXY_CACHE_DIR` set, an image that arrived completely (a `200` with an `image/*` type, within the
+size cap, no transfer error, client still connected) is kept on disk and later requests are served
+from there, without contacting the origin. Responses then carry `X-Cache: HIT` or `X-Cache: MISS`;
+with the cache off the response headers are exactly as before.
+
+- Token and host allowlist are checked before the cache is looked up, so a forged token still gets
+  a 404 and a host removed from `PROXY_ALLOWED_HOSTS` is refused even if its images are cached.
+- The entry name is the hex SHA-256 of the origin URL, in a subdirectory named after its first two
+  hex characters. Eviction is least-recently-used (a hit touches the file): when the total exceeds
+  `PROXY_CACHE_MAX_MB`, the oldest files are deleted down to 90% of it. There is no expiry other
+  than eviction, which is fine because the CDN file names are not reused for other content.
+- The directory must be writable and should be persistent. The Docker image creates `/data/imgcache`
+  and defaults `PROXY_CACHE_DIR` to it, so mount a volume there (e.g. a Dokploy volume at
+  `/data/imgcache`) or the cache is lost on every redeploy. Set `PROXY_CACHE_DIR=` (empty) to turn the
+  cache off. Only files named like cache entries are ever deleted, so the directory may be shared
+  with other files.
 
 # Using Docker Compose
 #### Build image and run container
@@ -117,6 +158,7 @@ POSTMAN COLLECTION = https://www.getpostman.com/collections/4c984c36d27bb591c445
         "author": "Tatsuya Hamazaki & Yuzuka Morita",
         "status": "Ongoing",
         "rating": "15 Tahun (minimal)",
+        "synopsis": "First paragraph of the synopsis.\n\nSecond paragraph, separated by one blank line.",
         "genre": [
             "Action",
             "Adventure",
@@ -155,6 +197,9 @@ POSTMAN COLLECTION = https://www.getpostman.com/collections/4c984c36d27bb591c445
     "code": 200
 }
    ```
+
+`synopsis` is plain text: paragraphs are separated by exactly one blank line (`\n\n`), whitespace
+inside a paragraph is collapsed, and it is an empty string when the comic has no synopsis.
 
 ## Search Comic
    ```

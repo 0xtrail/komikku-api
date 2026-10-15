@@ -193,6 +193,22 @@ func (g MangaQueryImpl) GetComicInfo(endpoint string) utils.Result {
 	c.OnHTML("div.ims", func(e *colly.HTMLElement) {
 		comicInfo.Thumbnail = stripQuery(e.ChildAttr("img", "src"))
 	})
+
+	// The visible synopsis is p.desc. section#Sinopsis is a hidden copy that only
+	// serves as a fallback. colly runs the callbacks in registration order, and
+	// the guard keeps the first non-empty text.
+	setSynopsis := func(e *colly.HTMLElement) {
+		if comicInfo.Synopsis != "" {
+			return
+		}
+		// e.Text was taken before this callback ran, so read the DOM after the
+		// <br> tags have become line breaks, or words around a <br> would glue.
+		e.DOM.Find("br").ReplaceWithHtml("\n")
+		comicInfo.Synopsis = normalizeSynopsis(e.DOM.Text())
+	}
+	c.OnHTML("p.desc, p[itemprop=description]", setSynopsis)
+	c.OnHTML("section#Sinopsis p", setSynopsis)
+
 	err := c.Visit(g.URL)
 	if err != nil {
 		output = utils.Result{
