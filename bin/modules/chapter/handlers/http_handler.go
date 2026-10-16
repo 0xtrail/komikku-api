@@ -7,6 +7,7 @@ import (
 	chapterQ "komikku-api/bin/modules/chapter/repositories/queries"
 	chapterU "komikku-api/bin/modules/chapter/usecases"
 	"komikku-api/bin/pkg/imgproxy"
+	"komikku-api/bin/pkg/prewarm"
 	"komikku-api/bin/pkg/utils"
 	"net/http"
 )
@@ -14,16 +15,24 @@ import (
 type ChapterHandler struct {
 	chapterCommandUsecase chapterU.ChapterUsecase
 	imgProxy              *imgproxy.Proxy
+	prewarm               prewarm.Enqueuer
+	recent                *prewarm.Recent
+	nextSlots             chan struct{}
 }
 
 
-func New(imgProxy *imgproxy.Proxy) *ChapterHandler {
+// New builds the handler with the Recent set that keeps chapters from being
+// prewarmed twice.
+func New(imgProxy *imgproxy.Proxy, recent *prewarm.Recent) *ChapterHandler {
 	collector := colly.NewCollector()
 	queryChapter := chapterQ.NewChapterQuery(config.GlobalEnv.BaseURL, collector)
 	queryUsecase := chapterU.CreateNewChapterUsecase(queryChapter)
 	return &ChapterHandler{
 		chapterCommandUsecase: queryUsecase,
 		imgProxy:              imgProxy,
+		prewarm:               imgProxy,
+		recent:                recent,
+		nextSlots:             make(chan struct{}, nextChapterSlots),
 	}
 }
 
@@ -40,5 +49,6 @@ func(m *ChapterHandler) GetChapterDetail(c echo.Context) error {
 		return utils.ResponseError(result.Error, c)
 	}
 
+	m.prewarmChapters(endpoint, result.Data)
 	return utils.Response(m.proxyImages(c, result.Data), "Get Chapter Detail", http.StatusOK, c)
 }

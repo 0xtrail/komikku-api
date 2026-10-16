@@ -38,9 +38,9 @@ go run ./bin/app/main.go                # same as build+start, no binary left be
 make install                            # go mod download
 ```
 
-Tests: `bin/pkg/imgproxy` needs no environment (`go test ./bin/pkg/imgproxy`); `bin/config` and
-`bin/modules/manga/repositories/queries` import `config`, whose `init()` panics without `PORT` and
-`BASE_URL`, so run everything as `PORT=0 BASE_URL=https://komiku.org/ go test ./...`. There is no
+Tests: `bin/pkg/imgproxy` and `bin/pkg/prewarm` need no environment (`go test -race ./bin/pkg/...`);
+`bin/config`, `bin/app`, the chapter `handlers` package and the `queries` packages import `config`, whose `init()`
+panics without `PORT` and `BASE_URL`, so run everything as `PORT=0 BASE_URL=https://komiku.org/ go test -race ./...`. There is no
 linter config and no `gofmt` target in the Makefile. `go vet ./...` and `gofmt -l .` are the only static checks available. Many
 files predate gofmt and are listed by `gofmt -l .`; keep new files gofmt-clean and do not reformat old ones. The `docker-compose`/`up`/`down` targets target
 a local daemon — do not run those on the Mac (see the host rules in `~/.claude/CLAUDE.md`).
@@ -67,7 +67,9 @@ bin/modules/<m>/repositories/queries/   query.go (interface) + *_impl.go (colly 
 bin/modules/<m>/models/domain/  response DTOs with json tags
 bin/pkg/utils/wrapper.go        Result envelope, Response(), ResponseError(), logging
 bin/pkg/http-error/error.go     typed error constructors (BadRequest, NotFound, BadGateway, ...)
-bin/pkg/imgproxy/               image proxy: token crypto, allowlist, rewrite, GET /img/:token handler
+bin/pkg/imgproxy/               image proxy: token crypto, allowlist, rewrite, GET /img/:token handler, disk cache, prewarmer
+bin/pkg/prewarm/                Recent (TTL set of prewarmed chapters) and Scheduler (which chapters to preload, and when)
+bin/app/prewarm_source.go       adapts the scraper queries for the prewarm scheduler
 bin/pkg/middlewares/log.go      JSON-ish echo request logger
 ```
 
@@ -193,7 +195,10 @@ usecases (`Data not found` for the listings), not by the query layer.
 
 `handlers.New(imgProxy)` builds its own `colly.NewCollector()`, constructs the query impls with
 `config.GlobalEnv.BaseURL`, and hands them to `CreateNewMangaUsecase`. `main.go` builds one
-`*imgproxy.Proxy`, calls `imgProxy.Mount(e)`, then `New(imgProxy)` + `Mount(e)` per module. Adding a module means touching `main.go` by hand.
+`*imgproxy.Proxy` and one `prewarm.Recent`, calls `imgProxy.Mount(e)`, then `mangaH.New(imgProxy)` and
+`chapterH.New(imgProxy, recent)` + `Mount(e)`. Adding a module means touching `main.go` by hand. `main.go` also
+starts the prewarm workers and scheduler (which scrapes on its own collector) and shuts down gracefully on
+SIGINT/SIGTERM (`signal.NotifyContext`, `e.Shutdown`, workers joined).
 
 One `*colly.Collector` is shared between the manga and chapter queries within a handler, but it is
 only a template: every scraping method starts with `c := g.Collector.Clone()` (colly v1.2.0 copies the
@@ -260,8 +265,8 @@ proxy is enabled, image URLs in responses become `<base>/img/<token>` and `GET|H
 - `PROXY_PUBLIC_URL` should be set in production: without it the base comes from the request `Host`
   header.
 - **Disk cache** (`cache.go`, opt-in via `PROXY_CACHE_DIR` for the binary, but the Dockerfile defaults it to
-  `/data/imgcache` so the image has it on; `PROXY_CACHE_MAX_MB`, default 1024, invalid
-  or <=0 logs one line and means the default; unusable dir logs one warning and runs with the cache off,
+  `/data/imgcache` so the image has it on; `PROXY_CACHE_MAX_MB`, default 1024 for the binary and 5120 via
+  the Dockerfile `ENV`, invalid or <=0 logs one line and means the default; unusable dir logs one warning and runs with the cache off,
   and a proxy without a valid key never touches the disk): key = hex SHA-256 of the decrypted upstream
   URL, sharded by its first 2 hex chars, one file per entry laid out `<body><meta JSON><4-byte meta
   length>` (the metadata trails because it is only known after streaming; one rename publishes, one
@@ -273,3 +278,29 @@ proxy is enabled, image URLs in responses become `<base>/img/<token>` and `GET|H
   `/data/imgcache` (runs as root); mount a persistent volume there (e.g. a Dokploy volume) or the cache is
   lost on every redeploy. An empty `PROXY_CACHE_DIR=` in the container env overrides the image default and
   turns the cache off.
+
+- **Late cancel is not a failure**: a client that hangs up the instant it has the last byte cancels the
+  request before an HTTP/2 upstream's end of stream is read, which surfaces as `context canceled` from the
+  copy. `stream` treats that as complete when the number of bytes copied equals the declared
+  `Content-Length`, so the image is still cached (this showed up with curl/Python readers, browsers keep
+  the connection). Any other copy error, or fewer bytes than declared, still discards the entry.
+- **Fetch path shared by requests and prewarm**: `Serve` checks the token and the allowlist, calls `fetch(ctx, url)`
+  (the guarded client with the redirect checks, then `vet` of status, `Content-Type` and declared size; the
+  502/404 mapping lives in `upstreamError`), then `stream(dst, ...)`. The
+  prewarmer calls the same `fetch` and `stream` with `io.Discard` as the destination, so it can never be
+  looser than a real request. Keep it that way: do not add a second download path.
+- **Prewarm** (`prewarm.go`, needs the key, the disk cache and `PROXY_PREWARM_CONCURRENCY` > 0, default 3):
+  `Prewarm(urls)` takes the original upstream URLs (the strings `Rewrite` turns into tokens, so call it
+  before `proxyImages`), drops disallowed and already cached ones, dedupes queued and in-flight ones in
+  `pending`, and enqueues on a bounded channel (2000; the newest are dropped when full, one log line per
+  burst). Workers start in `Start(ctx)`, stop on cancel (a half-written entry is removed) and are joined by
+  `Wait()`. `hostGate` spaces requests per host (150 ms plus up to 100 ms jitter). The hit/miss/prewarm
+  line is written lazily from request and worker paths, at most once per `statsEvery` (1 minute) and only
+  when something happened: there is no ticker goroutine to leak.
+- **Who calls Prewarm**: the chapter handler on every successful `GET /api/comic/chapter/:endpoint`
+  (`handlers/prewarm.go`: this chapter, plus the next chapter scraped on a goroutine, 2 concurrent
+  slots, `prewarm.Recent` claims of 30 minutes, claim released on failure or panic) and `prewarm.Scheduler`
+  (`PROXY_PREWARM_INTERVAL`, default 20m, 0 = off, min 1m: first page of newest and popular, latest chapter
+  per title via `scraperSource`, `PROXY_PREWARM_MAX_CHAPTERS` default 20, 6 h skip window shared with the
+  on-demand claims through `Recent`, first cycle after 30 s, 2 s between titles). `imgproxy` never imports
+  `prewarm` or `config`; `main.go` passes the proxy to both as a `prewarm.Enqueuer`.

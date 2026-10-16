@@ -35,7 +35,10 @@ Environment variables (or a `.env` file in the repository root):
 | `PROXY_ALLOWED_HOSTS` | no | Comma separated hosts the proxy may fetch from, default `*.komiku.to,*.komiku.org`. `*.example.com` matches `example.com` and every subdomain, `host.tld` matches exactly |
 | `PROXY_PUBLIC_URL` | no | Absolute base of the rewritten image URLs, e.g. `https://img2.example.com`. Empty derives it from each request (`X-Forwarded-Proto` + `Host`) |
 | `PROXY_CACHE_DIR` | no | Directory of the image proxy's on-disk cache. Empty keeps the cache off, which is the default when running the binary directly; the Docker image defaults it to `/data/imgcache`. If the directory cannot be created or written the API still boots, a warning is logged and the cache stays off |
-| `PROXY_CACHE_MAX_MB` | no | Size limit of that cache in MiB, default `1024`. A value that is not a positive integer logs one line and means the default |
+| `PROXY_CACHE_MAX_MB` | no | Size limit of that cache in MiB, default `1024` for the binary and `5120` in the Docker image (size the volume to match). A value that is not a positive integer logs one line and means the default |
+| `PROXY_PREWARM_CONCURRENCY` | no | Background workers that preload images into the disk cache, default `3`, `0` turns preloading off (it also needs `PROXY_HMAC_KEY` and `PROXY_CACHE_DIR`), at most `16` |
+| `PROXY_PREWARM_INTERVAL` | no | Time between scheduled preload cycles, a Go duration such as `20m` or `1h`, default `20m`, `0` turns the schedule off (chapters readers open are still preloaded), minimum `1m` |
+| `PROXY_PREWARM_MAX_CHAPTERS` | no | Chapters one scheduled cycle may preload, default `20`, at most `200` |
 
 ## Image proxy
 When `PROXY_HMAC_KEY` is set, every image URL in the responses (`image` of the comic listings,
@@ -72,6 +75,32 @@ with the cache off the response headers are exactly as before.
   `/data/imgcache`) or the cache is lost on every redeploy. Set `PROXY_CACHE_DIR=` (empty) to turn the
   cache off. Only files named like cache entries are ever deleted, so the directory may be shared
   with other files.
+
+### Cache preloading (optional)
+With the disk cache on, the proxy can fetch images before a reader asks for them, so the first view
+of a page is an `X-Cache: HIT` instead of a slow origin fetch. It does nothing without
+`PROXY_HMAC_KEY` and `PROXY_CACHE_DIR`, and `PROXY_PREWARM_CONCURRENCY=0` turns it off.
+
+- **On demand**: when `GET /api/comic/chapter/<endpoint>` succeeds, the images of that chapter and of
+  the next one (`next_endpoint`) are queued. The next chapter's page is scraped on its own goroutine,
+  so the response is never delayed. A chapter is queued at most once per 30 minutes, and at most two
+  of these background scrapes run at once.
+- **Scheduled**: every `PROXY_PREWARM_INTERVAL` the first page of the newest and of the popular
+  listing is read, and the images of each title's latest chapter are queued, at most
+  `PROXY_PREWARM_MAX_CHAPTERS` chapters per cycle. A chapter already preloaded in the last 6 hours is
+  skipped without scraping its page. The first cycle starts 30 seconds after boot, one title every
+  2 seconds.
+- **How the fetch works**: the workers use the same code path as a real `/img/<token>` request, so the
+  host allowlist, redirect checks, private-address guard, size cap, `image/*` check and the atomic
+  cache write all apply, only with no client attached. An image that is already cached, queued or in
+  flight is skipped. Requests to one host are spaced by 150 to 250 ms. The queue holds 2000 URLs; when
+  it is full the newest URLs are dropped and one line is logged per burst.
+- **Shutdown**: on SIGINT or SIGTERM the server stops accepting requests, the workers stop and a
+  half-written entry is removed.
+- **Log**: at most one line per minute, and only when something happened:
+  `imgproxy: cache last 1m0s: hit=31 miss=117 | prewarm filled=386 skipped=80 failed=0 dropped=0 queued=170 | 45 MiB on disk`.
+  `hit` and `miss` count client requests, the prewarm counters count the preloader. Each scheduled
+  cycle logs `prewarm: cycle done: titles=.. chapters=.. images=.. skipped=.. failed=..`.
 
 # Using Docker Compose
 #### Build image and run container

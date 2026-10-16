@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -70,6 +71,13 @@ type Config struct {
 	// CacheMaxBytes caps the cache (PROXY_CACHE_MAX_MB); zero or negative means
 	// 1 GiB.
 	CacheMaxBytes int64
+	// PrewarmConcurrency is how many background workers fill the disk cache
+	// ahead of requests (PROXY_PREWARM_CONCURRENCY). Zero turns prewarming off;
+	// it also needs the disk cache.
+	PrewarmConcurrency int
+	// PrewarmQueue bounds the URLs waiting to be prewarmed; zero or negative
+	// means 2000.
+	PrewarmQueue int
 }
 
 // Proxy encrypts, decrypts and serves proxied image URLs. A Proxy with no valid
@@ -83,6 +91,8 @@ type Proxy struct {
 	client  *http.Client
 	maxBody int64
 	cache   *diskCache // nil when the disk cache is off
+	prewarm *prewarmer // nil when prewarming is off
+	stats   stats
 }
 
 // New builds a Proxy from cfg. It never fails and never logs the key.
@@ -119,7 +129,12 @@ func New(cfg Config) *Proxy {
 	// A disabled proxy never serves, so it never touches the disk either.
 	if p.Enabled() {
 		p.cache = newConfiguredCache(cfg)
+		if p.cache != nil && cfg.PrewarmConcurrency > 0 {
+			p.prewarm = newPrewarmer(cfg.PrewarmConcurrency, cfg.PrewarmQueue)
+		}
 	}
+	p.stats.every = statsEvery
+	p.stats.lastLog.Store(time.Now().UnixNano())
 	return p
 }
 

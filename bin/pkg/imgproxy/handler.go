@@ -1,6 +1,7 @@
 package imgproxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -71,49 +72,22 @@ func (p *Proxy) Serve(c echo.Context) error {
 		}
 	}
 
-	// A fresh request with a fixed header set: client cookies, Authorization and
-	// Referer are never forwarded.
-	req, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet, target, nil)
-	if err != nil {
-		return utils.ResponseError(httpError.NewNotFound(), c)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		utils.LogError(err.Error(), "imgproxy: upstream request failed")
+	resp, ferr := p.fetch(c.Request().Context(), target)
+	if ferr != nil {
+		if ferr.notFound {
+			return utils.ResponseError(httpError.NewNotFound(), c)
+		}
+		utils.LogError(ferr.detail, ferr.msg)
 		return utils.ResponseError(httpError.NewBadGateway(), c)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return utils.ResponseError(httpError.NewNotFound(), c)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		utils.LogError(resp.StatusCode, "imgproxy: upstream returned a non-2xx status")
-		return utils.ResponseError(httpError.NewBadGateway(), c)
-	}
-
-	contentType := resp.Header.Get("Content-Type")
-	if !isImageType(contentType) {
-		utils.LogError(contentType, "imgproxy: upstream content type is not an image")
-		return utils.ResponseError(httpError.NewBadGateway(), c)
-	}
-	if resp.ContentLength > p.maxBody {
-		utils.LogError(resp.ContentLength, "imgproxy: upstream image is larger than the size cap")
-		return utils.ResponseError(httpError.NewBadGateway(), c)
-	}
-
-	meta := entryMeta{
-		ContentType:     contentType,
-		LastModified:    resp.Header.Get("Last-Modified"),
-		ETag:            resp.Header.Get("ETag"),
-		ContentEncoding: resp.Header.Get("Content-Encoding"),
-	}
+	meta := metaFromResponse(resp)
 	setImageHeaders(c.Response().Header(), meta, resp.ContentLength)
 	if p.cache != nil {
 		c.Response().Header().Set("X-Cache", "MISS")
+		p.stats.miss.Add(1)
+		p.logStats()
 	}
 	c.Response().WriteHeader(http.StatusOK)
 
@@ -121,14 +95,73 @@ func (p *Proxy) Serve(c echo.Context) error {
 		return nil
 	}
 
-	p.stream(c, resp, meta, target)
+	p.stream(c.Response(), resp, meta, target)
 	return nil
+}
+
+// upstreamError is why an upstream fetch produced nothing usable.
+type upstreamError struct {
+	notFound bool // the origin said 404, or the URL could not even be requested
+	msg      string
+	detail   interface{}
+}
+
+// fetch requests target from the origin the way every request does, whether a
+// client is waiting or the prewarmer is filling the cache: a fresh request with
+// a fixed header set (client cookies, Authorization and Referer are never
+// forwarded), through the guarded client, and only a 2xx image within the size
+// cap comes back. The caller closes the body.
+func (p *Proxy) fetch(ctx context.Context, target string) (*http.Response, *upstreamError) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, &upstreamError{notFound: true}
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, &upstreamError{msg: "imgproxy: upstream request failed", detail: err.Error()}
+	}
+	if fail := p.vet(resp); fail != nil {
+		resp.Body.Close()
+		return nil, fail
+	}
+	return resp, nil
+}
+
+// vet rejects an upstream response that must not be served or cached.
+func (p *Proxy) vet(resp *http.Response) *upstreamError {
+	if resp.StatusCode == http.StatusNotFound {
+		return &upstreamError{notFound: true}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return &upstreamError{msg: "imgproxy: upstream returned a non-2xx status", detail: resp.StatusCode}
+	}
+	if contentType := resp.Header.Get("Content-Type"); !isImageType(contentType) {
+		return &upstreamError{msg: "imgproxy: upstream content type is not an image", detail: contentType}
+	}
+	if resp.ContentLength > p.maxBody {
+		return &upstreamError{msg: "imgproxy: upstream image is larger than the size cap", detail: resp.ContentLength}
+	}
+	return nil
+}
+
+func metaFromResponse(resp *http.Response) entryMeta {
+	return entryMeta{
+		ContentType:     resp.Header.Get("Content-Type"),
+		LastModified:    resp.Header.Get("Last-Modified"),
+		ETag:            resp.Header.Get("ETag"),
+		ContentEncoding: resp.Header.Get("Content-Encoding"),
+	}
 }
 
 // serveCached answers from a cache entry with the headers of an upstream success.
 func (p *Proxy) serveCached(c echo.Context, img *cachedImage) error {
 	setImageHeaders(c.Response().Header(), img.meta, img.meta.Size)
 	c.Response().Header().Set("X-Cache", "HIT")
+	p.stats.hit.Add(1)
+	p.logStats()
 	c.Response().WriteHeader(http.StatusOK)
 
 	if c.Request().Method == http.MethodHead {
@@ -140,39 +173,48 @@ func (p *Proxy) serveCached(c echo.Context, img *cachedImage) error {
 	return nil
 }
 
-// stream copies the upstream body to the client, capped at maxBody. It is
-// streamed straight through, never buffered whole. The headers are already
-// sent, so a failure from here on can only abort the transfer.
+// stream copies the upstream body to dst (the client, or io.Discard for the
+// prewarmer), capped at maxBody. It is streamed straight through, never buffered
+// whole. For a client the headers are already sent, so a failure from here on
+// can only abort the transfer.
 //
 // With the cache on, a 200 body is also written to a cache entry, which is
-// published only if the whole image arrived (see bodyComplete) and the client
-// stream did not fail.
-func (p *Proxy) stream(c echo.Context, resp *http.Response, meta entryMeta, target string) {
-	var out io.Writer = c.Response()
+// published only if the whole image arrived (see bodyComplete) and the copy to
+// dst did not fail. It reports whether an entry was published.
+func (p *Proxy) stream(dst io.Writer, resp *http.Response, meta entryMeta, target string) bool {
+	out := dst
 	var fill *cacheFill
 	if p.cache != nil && resp.StatusCode == http.StatusOK {
 		var err error
 		if fill, err = p.cache.newFill(cacheKey(target)); err != nil {
 			utils.LogError(err.Error(), "imgproxy: cannot start a cache entry")
 		} else {
-			out = io.MultiWriter(out, fill) // the client first: a failed write stops the copy
+			out = io.MultiWriter(dst, fill) // dst first: a failed write stops the copy
 		}
 	}
 
 	n, err := io.Copy(out, io.LimitReader(resp.Body, p.maxBody))
+	if err != nil && errors.Is(err, context.Canceled) && resp.ContentLength >= 0 && n == resp.ContentLength {
+		// A client that hangs up the moment it has the last byte cancels the request
+		// before the upstream's end of stream was read (HTTP/2 reports it as an
+		// error). Every declared byte was copied, so the image is complete.
+		err = nil
+	}
 	if err != nil {
 		utils.LogError(err.Error(), "imgproxy: streaming the image failed")
 	}
 	if fill == nil {
-		return
+		return false
 	}
 	if err != nil || n == 0 || !p.bodyComplete(resp, n) {
 		fill.abort()
-		return
+		return false
 	}
 	if err := fill.commit(meta); err != nil {
 		utils.LogError(err.Error(), "imgproxy: cannot cache the image")
+		return false
 	}
+	return true
 }
 
 // bodyComplete reports whether the n bytes copied are the whole upstream body
