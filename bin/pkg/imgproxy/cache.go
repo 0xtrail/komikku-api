@@ -135,6 +135,13 @@ func (c *diskCache) entryPath(key string) string {
 	return filepath.Join(c.dir, key[:2], key)
 }
 
+// has reports whether an entry exists for key. It does not validate it: a
+// corrupt entry is dropped by open when a request meets it.
+func (c *diskCache) has(key string) bool {
+	info, err := os.Stat(c.entryPath(key))
+	return err == nil && info.Mode().IsRegular()
+}
+
 // cachedImage is an open, validated entry. The caller closes it.
 type cachedImage struct {
 	file *os.File

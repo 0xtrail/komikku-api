@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Env struct {
@@ -26,6 +27,13 @@ type Env struct {
 	// ProxyCacheMaxMB is always positive.
 	ProxyCacheDir   string
 	ProxyCacheMaxMB int
+
+	// Background cache preloading (needs the disk cache): the number of
+	// prewarm workers (0 = off), the time between scheduled cycles (0 = no
+	// schedule) and the chapters one cycle may prewarm.
+	ProxyPrewarmConcurrency int
+	ProxyPrewarmInterval    time.Duration
+	ProxyPrewarmMaxChapters int
 }
 
 var GlobalEnv Env
@@ -91,6 +99,12 @@ func init() {
 	// The proxy itself reports a directory it cannot use and falls back to off.
 	GlobalEnv.ProxyCacheDir = strings.TrimSpace(os.Getenv("PROXY_CACHE_DIR"))
 	GlobalEnv.ProxyCacheMaxMB = parseCacheMaxMB(os.Getenv("PROXY_CACHE_MAX_MB"))
+
+	// Cache preloading. It only does anything when the proxy and the disk cache
+	// are on, so these stay harmless defaults otherwise.
+	GlobalEnv.ProxyPrewarmConcurrency = parseBoundedInt("PROXY_PREWARM_CONCURRENCY", os.Getenv("PROXY_PREWARM_CONCURRENCY"), defaultPrewarmConcurrency, maxPrewarmConcurrency)
+	GlobalEnv.ProxyPrewarmInterval = parsePrewarmInterval(os.Getenv("PROXY_PREWARM_INTERVAL"))
+	GlobalEnv.ProxyPrewarmMaxChapters = parseBoundedInt("PROXY_PREWARM_MAX_CHAPTERS", os.Getenv("PROXY_PREWARM_MAX_CHAPTERS"), defaultPrewarmMaxChapters, maxPrewarmMaxChapters)
 }
 
 const defaultAPIURL = "https://api.komiku.org/"
@@ -102,6 +116,58 @@ const defaultProxyAllowedHosts = "*.komiku.to,*.komiku.org"
 // defaultProxyCacheMaxMB is the disk cache limit when PROXY_CACHE_MAX_MB is
 // not set or not usable.
 const defaultProxyCacheMaxMB = 1024
+
+const (
+	defaultPrewarmConcurrency = 3
+	maxPrewarmConcurrency     = 16
+	defaultPrewarmInterval    = 20 * time.Minute
+	minPrewarmInterval        = time.Minute
+	defaultPrewarmMaxChapters = 20
+	maxPrewarmMaxChapters     = 200
+)
+
+// parseBoundedInt parses a whole number from 0 up to max. Empty means def
+// silently; anything that is not a number, or is negative, logs one line and
+// means def; a number above max means max. 0 is valid and switches the feature
+// off.
+func parseBoundedInt(name, v string, def, max int) int {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		log.Printf("%s %q is not a whole number of 0 or more, using %d", name, v, def)
+		return def
+	}
+	if n > max {
+		log.Printf("%s %d is above the limit, using %d", name, n, max)
+		return max
+	}
+	return n
+}
+
+// parsePrewarmInterval parses PROXY_PREWARM_INTERVAL, a Go duration such as 20m
+// or 1h. Empty means the default silently, 0 switches the schedule off, and a
+// value below a minute is raised to a minute so the upstream is never polled in
+// a tight loop. Anything unparseable or negative logs one line and means the
+// default.
+func parsePrewarmInterval(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return defaultPrewarmInterval
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		log.Printf("PROXY_PREWARM_INTERVAL %q is not a duration such as 20m or 1h, using %s", v, defaultPrewarmInterval)
+		return defaultPrewarmInterval
+	}
+	if d > 0 && d < minPrewarmInterval {
+		log.Printf("PROXY_PREWARM_INTERVAL %s is below the minimum, using %s", d, minPrewarmInterval)
+		return minPrewarmInterval
+	}
+	return d
+}
 
 // parseCacheMaxMB parses PROXY_CACHE_MAX_MB, a positive number of MiB. Empty
 // means the default silently; anything else that is not a positive integer
