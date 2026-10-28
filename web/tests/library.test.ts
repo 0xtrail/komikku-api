@@ -362,3 +362,211 @@ test('judul berisi HTML/XSS disimpan apa adanya (escape adalah tugas tampilan, b
   assert.equal(lib.getBookmarks()[0].title, evil);
   assert.equal(JSON.parse(lib.exportJSON()).bookmarks.evil.title, evil);
 });
+
+/* ------------------------------------------------------------------ jurnal posisi baca */
+
+test('sink: put menerima catatan tersimpan; drop(slug) dan drop(null) saat riwayat dihapus', async () => {
+  const { lib } = await fresh();
+  const puts: any[] = [];
+  const drops: (string | null)[] = [];
+  lib.setProgressSink({ put: (p: any) => puts.push(p), drop: (s: string | null) => drops.push(s) });
+
+  save(lib, 'j1', 'j1-chapter-1', 4, { offset: 0.5 });
+  assert.equal(puts.length, 1);
+  assert.deepEqual(puts[0], lib.getProgress('j1'), 'persis catatan yang tersimpan');
+  assert.deepEqual([puts[0].page, puts[0].offset, puts[0].chapter.slug], [4, 0.5, 'j1-chapter-1']);
+
+  lib.markChapterRead('j1', 'j1-chapter-2');
+  assert.equal(puts.length, 2);
+  assert.deepEqual(puts[1], lib.getProgress('j1'));
+  assert.deepEqual(puts[1].read, ['j1-chapter-1', 'j1-chapter-2'], 'tanda baca baru ikut terjurnal');
+  assert.equal(puts[1].updatedAt, puts[0].updatedAt, 'markChapterRead tidak menggeser waktu');
+
+  // tanpa perubahan nyata: sink tidak dipanggil
+  lib.markChapterRead('j1', 'j1-chapter-2');
+  lib.markChapterRead('belum-ada', 'x');
+  lib.saveProgress({ manga: { slug: '', title: 't', cover: '' }, chapter: ch('x'), page: 0, pageCount: 0, offset: 0 });
+  lib.removeHistory('tidak-ada');
+  assert.equal(puts.length, 2);
+  assert.deepEqual(drops, []);
+
+  lib.removeHistory('j1');
+  assert.deepEqual(drops, ['j1']);
+  lib.removeHistory('j1');
+  assert.deepEqual(drops, ['j1'], 'sudah tak ada: tidak ada drop');
+
+  save(lib, 'j2', 'j2-chapter-1');
+  save(lib, 'j3', 'j3-chapter-1');
+  lib.clearHistory();
+  assert.deepEqual(drops, ['j1', null], 'clearHistory = drop(null)');
+  lib.clearHistory();
+  assert.deepEqual(drops, ['j1', null], 'riwayat sudah kosong: tidak ada drop');
+
+  // pelepasan sink: tidak ada panggilan lagi
+  lib.setProgressSink(undefined);
+  save(lib, 'j4', 'j4-chapter-1');
+  assert.equal(puts.length, 4);
+});
+
+test('sink yang melempar tidak merusak penyimpanan', async () => {
+  const { lib, storage } = await fresh();
+  lib.setProgressSink({ put() { throw new Error('IDB rusak'); }, drop() { throw new Error('IDB rusak'); } });
+  save(lib, 'b1', 'b1-chapter-1', 6);
+  lib.markChapterRead('b1', 'b1-chapter-2');
+  assert.equal(lib.getProgress('b1').page, 6);
+  assert.deepEqual(JSON.parse(storage.getItem(KEY)).progress.b1.read, ['b1-chapter-1', 'b1-chapter-2'], 'tetap tersimpan di localStorage');
+  assert.doesNotThrow(() => lib.removeHistory('b1'));
+  assert.equal(lib.getProgress('b1'), undefined);
+  save(lib, 'b2', 'b2-chapter-1');
+  assert.doesNotThrow(() => lib.clearHistory());
+  assert.deepEqual(lib.getHistory(), []);
+});
+
+/** Catatan mentah seperti yang dibaca dari jurnal. */
+const rec = (slug: string, chapter: string, page: number, updatedAt: number, read: string[] = [chapter], extra: Record<string, unknown> = {}) => ({
+  ...meta(slug), chapter: ch(chapter, `Chapter ${chapter}`), page, pageCount: 20, offset: 0.25, updatedAt, read, ...extra,
+});
+
+test('recoverProgress: menyisipkan catatan yang belum ada, menulis ke localStorage, menerbitkan "import"', async () => {
+  const win = new EventTarget();
+  (globalThis as any).window = win;
+  try {
+    const { lib, storage } = await fresh();
+    const kinds: string[] = [];
+    win.addEventListener('library:change', (e) => kinds.push((e as CustomEvent).detail.kind));
+
+    assert.equal(lib.recoverProgress(rec('r0', 'r0-chapter-7', 11, 1_800_000_000_000, ['R0-Chapter-6', 'r0-chapter-7'])), true);
+    const p = lib.getProgress('r0');
+    assert.deepEqual([p.chapter.slug, p.chapter.name, p.page, p.pageCount, p.offset, p.updatedAt], ['r0-chapter-7', 'Chapter r0-chapter-7', 11, 20, 0.25, 1_800_000_000_000]);
+    assert.deepEqual(p.read, ['r0-chapter-6', 'r0-chapter-7'], 'read dinormalkan huruf kecil');
+    assert.deepEqual(lib.getHistory().map((x) => x.slug), ['r0']);
+    assert.deepEqual(kinds, ['import']);
+
+    const saved = JSON.parse(storage.getItem(KEY));
+    assert.equal(saved.progress.r0.page, 11, 'dipersist ke localStorage');
+    // instance baru yang hanya membaca storage melihatnya
+    const again = await fresh(storage);
+    assert.equal(again.lib.getProgress('r0').chapter.slug, 'r0-chapter-7');
+  } finally {
+    delete (globalThis as any).window;
+  }
+});
+
+test('recoverProgress: jurnal lebih baru menang, read disatukan', async () => {
+  const { lib, storage } = await fresh();
+  save(lib, 'r1', 'r1-chapter-1', 2);
+  const stored = lib.getProgress('r1');
+  const inc = rec('r1', 'r1-chapter-5', 9, stored.updatedAt + 5000, ['r1-chapter-4', 'r1-chapter-5']);
+  assert.equal(lib.recoverProgress(inc), true);
+  const p = lib.getProgress('r1');
+  assert.deepEqual([p.chapter.slug, p.page, p.updatedAt], ['r1-chapter-5', 9, stored.updatedAt + 5000], 'posisi dari jurnal');
+  assert.deepEqual(p.read, ['r1-chapter-1', 'r1-chapter-4', 'r1-chapter-5'], 'read gabungan, tanpa duplikat');
+  assert.equal(lib.getHistory().length, 1);
+  assert.equal(JSON.parse(storage.getItem(KEY)).progress.r1.page, 9, 'dipersist');
+});
+
+test('recoverProgress: jurnal lebih tua tidak menimpa data yang lebih baru', async () => {
+  const win = new EventTarget();
+  (globalThis as any).window = win;
+  try {
+    const { lib, storage } = await fresh();
+    const kinds: string[] = [];
+    win.addEventListener('library:change', (e) => kinds.push((e as CustomEvent).detail.kind));
+    save(lib, 'r2', 'r2-chapter-3', 8);
+    save(lib, 'r2', 'r2-chapter-3', 12); // simpan lagi: read tetap ['r2-chapter-3']
+    const stored = { ...lib.getProgress('r2') };
+    kinds.length = 0;
+
+    // lebih tua dan read-nya sudah termuat: tidak ada yang berubah
+    let before = storage.getItem(KEY);
+    assert.equal(lib.recoverProgress(rec('r2', 'r2-chapter-1', 0, stored.updatedAt - 5000, ['r2-chapter-3'])), false);
+    assert.equal(storage.getItem(KEY), before, 'tidak menulis ulang storage');
+    assert.deepEqual(kinds, [], 'tidak ada event');
+
+    // sama persis dengan yang tersimpan (kasus boot biasa): juga tidak berubah
+    assert.equal(lib.recoverProgress(JSON.parse(JSON.stringify(stored))), false);
+    assert.deepEqual(kinds, []);
+
+    // lebih tua tetapi membawa chapter terbaca yang belum ada: hanya read yang bertambah, posisi tetap milik storage
+    assert.equal(lib.recoverProgress(rec('r2', 'r2-chapter-1', 0, stored.updatedAt - 5000, ['r2-chapter-0', 'r2-chapter-3'])), true);
+    const p = lib.getProgress('r2');
+    assert.deepEqual([p.chapter.slug, p.page, p.updatedAt], ['r2-chapter-3', 12, stored.updatedAt], 'posisi tidak tertimpa');
+    assert.deepEqual(p.read, ['r2-chapter-0', 'r2-chapter-3']);
+    assert.deepEqual(kinds, ['import']);
+    assert.deepEqual(JSON.parse(storage.getItem(KEY)).progress.r2.read, ['r2-chapter-0', 'r2-chapter-3']);
+  } finally {
+    delete (globalThis as any).window;
+  }
+});
+
+test('recoverProgress: input tidak valid -> false, tanpa melempar, tanpa mengubah apa pun', async () => {
+  const win = new EventTarget();
+  (globalThis as any).window = win;
+  try {
+    const { lib, storage } = await fresh();
+    save(lib, 'keep', 'keep-chapter-1', 3);
+    const snapshot = lib.exportJSON();
+    const stored = storage.getItem(KEY);
+    let events = 0;
+    win.addEventListener('library:change', () => events++);
+    const good = rec('z', 'z-chapter-1', 1, 1_800_000_000_000);
+    const cases: Record<string, unknown> = {
+      'null': null,
+      'undefined': undefined,
+      'string': 'bukan objek',
+      'angka': 42,
+      'array': [good],
+      'objek kosong': {},
+      'tanpa slug': { ...good, slug: undefined },
+      'slug bukan string': { ...good, slug: 5 },
+      'slug kosong': { ...good, slug: '' },
+      'tanpa chapter': { ...good, chapter: undefined },
+      'chapter bukan objek': { ...good, chapter: 'z-chapter-1' },
+      'read bukan array': { ...good, read: 'z-chapter-1' },
+      'read berisi angka': { ...good, read: [1] },
+      'page negatif': { ...good, page: -1 },
+      'page pecahan': { ...good, page: 1.5 },
+      'offset bukan angka': { ...good, offset: '0.5' },
+      'updatedAt string': { ...good, updatedAt: '1800000000000' },
+      'updatedAt di luar rentang': { ...good, updatedAt: 9e15 },
+      'judul kosong': { ...good, title: '' },
+      'sampul javascript:': { ...good, cover: 'javascript:alert(1)' },
+      'sampul data:': { ...good, cover: 'data:text/html,<script>alert(1)</script>' },
+    };
+    for (const [label, input] of Object.entries(cases)) {
+      let res: unknown;
+      assert.doesNotThrow(() => { res = lib.recoverProgress(input); }, label);
+      assert.equal(res, false, label);
+    }
+    assert.equal(lib.exportJSON(), snapshot, 'tidak ada perubahan di memori');
+    assert.equal(storage.getItem(KEY), stored, 'tidak ada perubahan di storage');
+    assert.equal(events, 0, 'tidak ada event');
+    assert.equal(lib.getProgress('z'), undefined);
+  } finally {
+    delete (globalThis as any).window;
+  }
+});
+
+test('recoverProgress: batas riwayat tetap dijaga; catatan paling tua yang melewati batas tidak mengubah apa pun', async () => {
+  const { lib, storage } = await fresh();
+  for (let i = 0; i < 300; i++) save(lib, `h${i}`, `h${i}-chapter-1`);
+  const oldest = lib.getHistory().at(-1);
+  const newest = lib.getHistory()[0];
+  // lebih baru dari semuanya: masuk, yang paling tua terbuang
+  assert.equal(lib.recoverProgress(rec('baru', 'baru-chapter-1', 2, newest.updatedAt + 1000)), true);
+  assert.equal(lib.getHistory().length, 300);
+  assert.equal(lib.getProgress('baru').page, 2);
+  assert.equal(lib.getProgress(oldest.slug), undefined, 'yang tertua dibuang');
+  // lebih tua dari semuanya: langsung terbuang lagi -> tak ada yang berubah
+  const before = storage.getItem(KEY);
+  assert.equal(lib.recoverProgress(rec('kuno', 'kuno-chapter-1', 2, 1)), false);
+  assert.equal(lib.getProgress('kuno'), undefined);
+  assert.equal(storage.getItem(KEY), before);
+});
+
+test('recoverProgress: bekerja walau storage melempar (data hidup di memori)', async () => {
+  const boom = { getItem() { throw new Error('SecurityError'); }, setItem() { throw new Error('QuotaExceededError'); } };
+  const { lib } = await fresh(boom);
+  assert.equal(lib.recoverProgress(rec('mem', 'mem-chapter-2', 4, 1_800_000_000_000)), true);
+  assert.equal(lib.getProgress('mem').page, 4);
+});

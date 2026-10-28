@@ -72,6 +72,7 @@ src/lib/readerimg.ts       pemuat gambar halaman (data-src + IntersectionObserve
 src/lib/readerresume.ts    melompat ke posisi terakhir dan menahannya selama gambar dimuat + toast "Lanjut dari halaman N"
 src/lib/detail.ts          halaman detail manga: sinopsis, Bookmark, Lanjutkan, urutan + cari chapter, tanda terbaca
 src/lib/library.ts         pustaka di localStorage: bookmark, riwayat, posisi baca, ekspor/impor, event `library:change`
+src/lib/progressjournal.ts  jurnal IndexedDB (satu catatan posisi baca terakhir) agar posisi selamat bila browser dimatikan paksa
 src/lib/bookmarks.ts       tombol bookmark `[data-bm]` di kartu/detail + lencana `[data-bm-count]` (satu pendengar klik)
 src/lib/errorview.ts       markup keadaan galat (string murni): dipakai 404.astro, 50x.astro, dan aplikasi
 src/lib/errorstate.ts      perilaku keadaan galat: tombol Coba lagi, ulang otomatis saat kembali online
@@ -81,7 +82,7 @@ src/lib/suggest.ts         autocomplete kolom cari (combobox ARIA)
 src/lib/navmenu.ts         sub-menu Daftar di header desktop (disclosure)
 src/lib/page.ts            pembantu kecil bersama (judul dokumen, elemen #app)
 src/lib/prefetch.ts        prefetch (IntersectionObserver, sentuh, hover) dengan antrean terbatas
-src/lib/boot.ts            dispatcher: memilih halaman dari URL
+src/lib/boot.ts            dispatcher: memulihkan jurnal posisi baca, lalu memilih halaman dari URL
 src/lib/site.ts            perilaku di setiap halaman: menu aktif, header (`initHeader`), sub-menu Daftar, saran cari, prefetch, bookmark
 src/lib/header.ts          panel navigasi + baris cari di ponsel, pintasan `/` dan Cmd/Ctrl+K
 src/lib/icons.ts           ikon SVG inline (string konstan)
@@ -118,6 +119,16 @@ halaman dipulihkan dari bfcache. Bila storage melempar/tidak ada, data tetap hid
 di memori untuk sesi itu; JSON rusak dicadangkan sekali ke `mr:lib:v1:corrupt` lalu
 pustaka mulai kosong. `views.ts` hanya mengimpor TIPE dari modul ini (ia dijalankan
 juga di Node saat build), jadi data pustaka selalu dioper sebagai parameter template.
+
+**Jurnal posisi baca.** Browser menulis localStorage ke disk dengan tertunda (Chromium: 5 detik, maksimum 60 kali
+per jam), jadi bila browser dimatikan paksa (geser dari recents) posisi terakhir bisa hilang dan chapter dibuka dari
+halaman 1. Karena itu `library.ts` meneruskan setiap catatan posisi ke `ProgressSink` (`setProgressSink`), yang
+dipasang `progressjournal.ts` sebagai satu catatan di IndexedDB (`mr-journal` / `kv` / `last`, transaksi
+`durability: 'strict'`). `boot.ts` memanggil `recoverFromJournal()` (paling lama 400 ms, tak pernah gagal atau
+menggantung) lalu `recoverProgress` menggabungkannya seperti impor: `updatedAt` terbaru menang, `read` disatukan,
+dan tidak ada yang ditulis bila tak ada yang berubah. `removeHistory`/`clearHistory` ikut menghapus jurnal, jadi
+riwayat yang dihapus tidak hidup lagi. Jurnal hanya cadangan: tanpa IndexedDB (mode privat, kuota) semuanya
+diam-diam tetap berjalan di localStorage.
 
 Halaman Pustaka punya ekspor (`panel-pustaka-YYYY-MM-DD.json`) dan impor; impor
 menggabungkan (bookmark: gabungan; riwayat: `updatedAt` terbaru menang, `read`
