@@ -321,10 +321,6 @@ a.reader-back:hover {
 	padding-inline: 8px;
 	font-size: 13px;
 }
-.fixbar .fix-back {
-	flex: 0 0 44px;
-	padding: 0;
-}
 /* tengah: nama chapter yang sedang dibaca + "12 / 69" (src/lib/readerview.ts) */
 .fix-now {
 	display: flex;
@@ -376,12 +372,15 @@ a.reader-back:hover {
 
 .reader-toast {
 	position: fixed;
-	left: 50%;
+	left: 0;
+	right: 0;
 	bottom: calc(88px + var(--safe-b));
 	z-index: 70;
 	display: flex;
 	align-items: center;
-	max-width: min(92vw, 460px);
+	width: max-content;
+	max-width: calc(100vw - 32px);
+	margin-inline: auto;
 	padding: 2px 4px 2px 16px;
 	border: 1px solid var(--ctl-border);
 	border-radius: 999px;
@@ -390,11 +389,13 @@ a.reader-back:hover {
 	color: #fff;
 	font-size: 14px;
 	font-weight: 500;
-	transform: translateX(-50%);
 	animation: toast-in 0.2s ease;
 }
 .reader-toast-text {
 	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .reader-toast-btn,
 .reader-toast-x {
@@ -423,11 +424,27 @@ a.reader-back:hover {
 @keyframes toast-in {
 	from {
 		opacity: 0;
-		transform: translate(-50%, 8px);
+		transform: translateY(8px);
 	}
 	to {
 		opacity: 1;
-		transform: translate(-50%, 0);
+		transform: translateY(0);
+	}
+}
+@media (max-width: 640px) {
+	.reader-toast {
+		max-width: calc(100vw - 24px); /* layar 320px: teks "Lanjut dari halaman N" tetap utuh, tanpa elipsis */
+		padding: 0 2px 0 12px;
+		font-size: 13px;
+	}
+	.reader-toast-btn {
+		padding: 0 8px;
+		min-height: 36px;
+	}
+	.reader-toast-x {
+		width: 36px;
+		min-height: 36px;
+		font-size: 18px;
 	}
 }
 @media (min-width: 860px) {

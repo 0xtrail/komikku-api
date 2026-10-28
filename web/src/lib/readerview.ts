@@ -65,7 +65,7 @@ export function readerHeadHtml(c: ReaderCtx): string {
  * Tombol prev/next. `pos`:
  *  - top   : baris prev/next di bawah bar atas
  *  - end   : akhir chapter — tombol kembali + prev/next berlabel nama chapter (+ "Ini chapter terbaru")
- *  - fixed : bar tetap di bawah layar (zona jempol): ← | ‹ Ch. 1 | Chapter 2 · 3 / 40 | Ch. 3 ›
+ *  - fixed : bar tetap di bawah layar (zona jempol): ‹ Ch. 1 | Chapter 2 · 3 / 40 | Ch. 3 ›
  */
 export function readerNavHtml(c: ReaderCtx, pos: 'top' | 'end' | 'fixed'): string {
   if (c.state === 'none' || !c.back) return '';
@@ -96,7 +96,6 @@ export function readerNavHtml(c: ReaderCtx, pos: 'top' | 'end' | 'fixed'): strin
         ? '<span class="fix-now sk" aria-hidden="true">&nbsp;</span>'
         : `<span class="fix-now"><span class="fix-name">${esc(readerTitle(c))}</span><span class="fix-pg" data-read-progress></span></span>`;
     return `<nav class="fixbar" data-rnav="fixed" aria-label="Navigasi chapter">
-      <a class="btn btn-ghost fix-back" href="${back}" aria-label="Kembali ke info manga">${ICON_ARROW_LEFT}</a>
       ${step('prev')}${now}${step('next')}
     </nav>`;
   }

@@ -344,6 +344,9 @@ test('readerNavHtml: top/end/fixed; fixed membawa nama chapter + penunjuk halama
   const fixed = V.readerNavHtml(ready(), 'fixed');
   assert.ok(fixed.includes('class="fix-name">Chapter 66<'));
   assert.ok(/class="fix-pg" data-read-progress/.test(fixed));
+  // Bar bawah hanya prev | sekarang | next: tombol kembali ada di header atas, bukan di sini.
+  assert.ok(!fixed.includes('fix-back') && !fixed.includes('Kembali ke info manga') && !fixed.includes('<svg'));
+  assert.ok(fixed.includes('rel="prev"') && fixed.includes('rel="next"'));
   assert.equal(V.readerNavHtml({ title: 'X', state: 'none' }, 'top'), '');
   assert.equal(V.readerNavHtml({ title: 'X', state: 'none' }, 'fixed'), '');
 });

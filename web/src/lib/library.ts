@@ -12,6 +12,11 @@
  * akses storage dibungkus try/catch; kalau storage tak tersedia atau melempar,
  * data tetap hidup di memori untuk sesi ini. Modul sengaja tanpa import dan hanya
  * memakai sintaks TypeScript yang bisa di-strip (agar bisa diuji langsung di Node).
+ *
+ * localStorage ditulis ke disk browser dengan tertunda (Chromium: 5 detik, maksimum 60 kali per jam), jadi
+ * posisi baca terakhir bisa hilang bila browser dimatikan paksa. Karena itu setiap catatan posisi juga
+ * diteruskan ke `ProgressSink` (jurnal IndexedDB, `progressjournal.ts`) dan `recoverProgress` memasukkannya
+ * kembali saat boot. Modul ini tetap sumber kebenaran dan tidak tahu apa-apa soal IndexedDB.
  */
 
 export interface MangaMeta {
@@ -237,7 +242,7 @@ function persist(): void {
  *  - bookmark : bookmark ditambah/dihapus
  *  - progress : posisi baca, tanda sudah dibaca, atau satu riwayat dihapus
  *  - clear    : seluruh riwayat dihapus
- *  - import   : data diganti sekaligus — hasil impor, perubahan dari tab lain, atau kembali dari bfcache
+ *  - import   : data diganti sekaligus — hasil impor, pemulihan dari jurnal, perubahan dari tab lain, atau kembali dari bfcache
  */
 export type LibraryChange = 'bookmark' | 'progress' | 'import' | 'clear';
 
@@ -337,6 +342,36 @@ function trimHistory(st: State): void {
   for (const p of oldest) st.progress.delete(p.slug);
 }
 
+/** Pengait ke salinan cadangan posisi baca di luar localStorage; lihat catatan di kepala berkas. */
+export interface ProgressSink {
+  /** Catatan yang baru saja tersimpan (posisi baru atau tanda baca baru). */
+  put(p: Progress): void;
+  /** Satu riwayat dihapus (`slug`) atau seluruh riwayat dihapus (`null`). */
+  drop(slug: string | null): void;
+}
+
+let sink: ProgressSink | undefined;
+
+export function setProgressSink(s: ProgressSink | undefined): void {
+  sink = s;
+}
+
+/** Sink yang rusak tidak boleh mengganggu penyimpanan: pustaka tetap sumber kebenaran. */
+function toSink(call: (s: ProgressSink) => void): void {
+  if (!sink) return;
+  try {
+    call(sink);
+  } catch {
+    /* jurnal hanyalah cadangan tambahan */
+  }
+}
+
+/** Teruskan catatan manga ini (bentuk yang tersimpan) ke sink. */
+function journal(slug: string): void {
+  const rec = load().progress.get(slug);
+  if (rec) toSink((s) => s.put(rec));
+}
+
 /** Riwayat, yang terakhir dibaca di depan. */
 export function getHistory(): Progress[] {
   return [...load().progress.values()].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -362,6 +397,7 @@ export function saveProgress(p: ProgressInput): void {
     });
     trimHistory(st);
   });
+  journal(meta.slug);
 }
 
 /** Tandai chapter terbaca tanpa menggeser posisi baca. Tidak berbuat apa-apa bila manga belum punya riwayat. */
@@ -370,6 +406,7 @@ export function markChapterRead(mangaSlug: string, chapterSlug: string): void {
   const key = norm(chapterSlug);
   if (!prev || prev.read.includes(key)) return;
   mutate('progress', (st) => st.progress.set(mangaSlug, { ...prev, read: capRead([...prev.read, key]) }));
+  journal(mangaSlug);
 }
 
 export const isChapterRead = (mangaSlug: string, chapterSlug: string): boolean =>
@@ -378,11 +415,13 @@ export const isChapterRead = (mangaSlug: string, chapterSlug: string): boolean =
 export function removeHistory(slug: string): void {
   if (!load().progress.has(slug)) return;
   mutate('progress', (st) => st.progress.delete(slug));
+  toSink((s) => s.drop(slug));
 }
 
 export function clearHistory(): void {
   if (!load().progress.size) return;
   mutate('clear', (st) => st.progress.clear());
+  toSink((s) => s.drop(null));
 }
 
 /* ----------------------------------------------------------- export/import */
@@ -421,4 +460,37 @@ export function importJSON(text: string): { bookmarks: number; history: number }
     trimHistory(st);
   });
   return { bookmarks: inc.bookmarks.size, history: inc.progress.size };
+}
+
+/**
+ * Masukkan kembali satu catatan posisi dari jurnal (`progressjournal.ts`) saat boot. Input diperiksa seperti
+ * data impor; yang tidak valid diabaikan tanpa melempar. Catatan yang belum ada disisipkan; yang sudah ada
+ * digabung seperti impor (`updatedAt` lebih baru menang, `read` disatukan), jadi jurnal yang lebih tua tidak
+ * pernah menimpa data yang lebih baru. Storage ditulis dan `library:change` ("import") terbit HANYA bila ada
+ * yang benar-benar berubah. Mengembalikan apakah ada yang berubah.
+ */
+export function recoverProgress(raw: unknown): boolean {
+  try {
+    if (!isObj(raw)) return false;
+    const slug = str(raw.slug, 200);
+    const inc = slug ? parseProgress(raw, slug) : undefined;
+    if (!inc) return false;
+    const st = load();
+    const cur = st.progress.get(inc.slug);
+    if (cur) {
+      const next = mergeProgress(cur, inc);
+      // `read` hanya bertambah di depan (lalu dipangkas dari depan): panjang sama berarti isi sama.
+      if (next.updatedAt === cur.updatedAt && next.read.length === cur.read.length) return false;
+      st.progress.set(inc.slug, next);
+    } else {
+      st.progress.set(inc.slug, inc);
+    }
+    trimHistory(st);
+    if (!st.progress.has(inc.slug)) return false; // paling tua dan melewati batas: terbuang lagi, tak ada yang berubah
+    persist();
+    emit('import');
+    return true;
+  } catch {
+    return false;
+  }
 }
